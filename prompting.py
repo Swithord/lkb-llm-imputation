@@ -34,11 +34,10 @@ def run_llama(prompt) -> str:
     :param prompt: str, the prompt to query the model
     :return:
     """
-    tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-3.2-3B-Instruct')
-    model = AutoModelForCausalLM.from_pretrained('meta-llama/Llama-3.2-3B-Instruct')
-
     # Query the model with the prompt and return the output
-    output = ''
+    input = ... # Tokenize the prompt
+    output = ... # Generate the output
+    # Decode the output tokens
     return output
 
 
@@ -57,5 +56,7 @@ if __name__ == '__main__':
         geographic_neighbours = json.load(f)
 
     impute_values = {} # Define the (language, feature) pairs to impute
+    tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-3.2-3B-Instruct')
+    model = AutoModelForCausalLM.from_pretrained('meta-llama/Llama-3.2-3B-Instruct')
     # Construct prompts and query the model
     # Extract the classification from the output and save the results
