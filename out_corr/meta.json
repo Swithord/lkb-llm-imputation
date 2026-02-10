@@ -1,0 +1,59 @@
+{
+  "urielplus": {
+    "integrate_all": true,
+    "skip_glottolog": true,
+    "use_glottocodes": false,
+    "aggregation": null,
+    "combine_sources": "weighted",
+    "fill_with_base_lang": false,
+    "limit_langs": null,
+    "fetch_info": {
+      "called": {
+        "set_fill_with_base_lang": true,
+        "integrate_saphon": true,
+        "integrate_bdproto": true,
+        "integrate_grambank": true,
+        "integrate_apics": true,
+        "integrate_ewave": true,
+        "inferred_features": true,
+        "get_typological_data_array": true,
+        "get_typological_features_array": true,
+        "get_typological_languages_array": true
+      },
+      "notes": []
+    }
+  },
+  "phi": {
+    "min_support": 2,
+    "alpha": 0.0,
+    "support_shrinkage": 5.0,
+    "chunk": 128
+  },
+  "imputed": {
+    "enabled": false,
+    "softimpute_max_iters": 200,
+    "softimpute_rank": 50,
+    "softimpute_shrinkage": null,
+    "seed": 0
+  },
+  "shapes": {
+    "X": [
+      8171,
+      800
+    ],
+    "C_phi": [
+      800,
+      800
+    ],
+    "support": [
+      800,
+      800
+    ],
+    "C_imputed": null
+  },
+  "value_counts": {
+    "-1_missing": 90625510,
+    "0_absent": 628556,
+    "1_present": 261134
+  }
+}
