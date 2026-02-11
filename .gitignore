@@ -1,0 +1,13 @@
+.DS_Store
+.venv/
+.venv311/
+__pycache__/
+code/__pycache__/
+*.py[cod]
+
+# Prevent re-adding oversized generated artifacts.
+out_corr/X.npy
+output/all_missing_prompts.jsonl
+
+# Large external dataset directory kept locally only.
+glottolog/
