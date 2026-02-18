@@ -84,6 +84,180 @@ def _top_correlated_features(feature: str, top_n: int) -> List[str]:
     return feats[:top_n] if top_n > 0 else feats
 
 
+def _neighbor_k_for_language(neighbour_map: dict, language: str, fallback: int = 5) -> int:
+    direct = neighbour_map.get(language, [])
+    if isinstance(direct, list) and len(direct) > 0:
+        return len(direct)
+    lengths = [len(v) for v in neighbour_map.values() if isinstance(v, list) and len(v) > 0]
+    if lengths:
+        return max(lengths)
+    return fallback
+
+
+def _lang_has_feature_value(lang: str, feat: str) -> bool:
+    if typ_df is None or lang not in typ_df.index or feat not in typ_df.columns:
+        return False
+    return not _is_missing(typ_df.at[lang, feat])
+
+
+def _observed_correlated_set(lang: str, correlated: Sequence[str]) -> set[str]:
+    observed = set()
+    for feat in correlated:
+        if _lang_has_feature_value(lang, feat):
+            observed.add(feat)
+    return observed
+
+
+def _all_language_codes() -> List[str]:
+    if typ_df is not None:
+        return [str(x) for x in typ_df.index.tolist()]
+    return [str(x) for x in metadata_df.index.tolist()]
+
+
+def _meta_lat_lon(gc: str) -> Tuple[Optional[float], Optional[float]]:
+    if gc not in metadata_df.index:
+        return None, None
+    row = metadata_df.loc[gc]
+    lat = _get_meta_value(row, "latitude", "None")
+    lon = _get_meta_value(row, "longitude", "None")
+    if lat == "None" or lon == "None":
+        return None, None
+    return float(lat), float(lon)
+
+
+def _ranked_phylo_candidates(language: str, pool_limit: int = 400) -> List[str]:
+    ranked: List[str] = []
+    seen = {language}
+
+    direct = genetic_neighbours.get(language, [])
+    if isinstance(direct, list):
+        for nb in direct:
+            nb = str(nb)
+            if nb in seen:
+                continue
+            seen.add(nb)
+            ranked.append(nb)
+            if len(ranked) >= pool_limit:
+                return ranked
+
+    idx = 0
+    while idx < len(ranked) and len(ranked) < pool_limit:
+        cur = ranked[idx]
+        idx += 1
+        nxt_list = genetic_neighbours.get(cur, [])
+        if not isinstance(nxt_list, list):
+            continue
+        for nxt in nxt_list:
+            nxt = str(nxt)
+            if nxt in seen:
+                continue
+            seen.add(nxt)
+            ranked.append(nxt)
+            if len(ranked) >= pool_limit:
+                return ranked
+
+    for gc in _all_language_codes():
+        if gc in seen:
+            continue
+        seen.add(gc)
+        ranked.append(gc)
+        if len(ranked) >= pool_limit:
+            break
+    return ranked
+
+
+def _ranked_geo_candidates(language: str, pool_limit: int = 1200) -> List[str]:
+    seen = {language}
+    ranked: List[str] = []
+    lat0, lon0 = _meta_lat_lon(language)
+
+    if lat0 is not None and lon0 is not None:
+        scored: List[Tuple[float, str]] = []
+        for gc in _all_language_codes():
+            if gc == language:
+                continue
+            lat, lon = _meta_lat_lon(gc)
+            if lat is None or lon is None:
+                continue
+            scored.append((_haversine_km(lat0, lon0, lat, lon), gc))
+        scored.sort(key=lambda x: (x[0], x[1]))
+        for _, gc in scored:
+            if gc in seen:
+                continue
+            seen.add(gc)
+            ranked.append(gc)
+            if len(ranked) >= pool_limit:
+                return ranked
+
+    direct = geographic_neighbours.get(language, [])
+    if isinstance(direct, list):
+        for nb in direct:
+            nb = str(nb)
+            if nb in seen:
+                continue
+            seen.add(nb)
+            ranked.append(nb)
+            if len(ranked) >= pool_limit:
+                return ranked
+
+    for gc in _all_language_codes():
+        if gc in seen:
+            continue
+        seen.add(gc)
+        ranked.append(gc)
+        if len(ranked) >= pool_limit:
+            break
+    return ranked
+
+
+def _select_neighbors_with_feature_coverage(
+    candidates: Sequence[str], correlated: Sequence[str], target_feature: str, k: int
+) -> List[str]:
+    if k <= 0:
+        return []
+
+    feature_targets = [f for f in correlated if typ_df is not None and f in typ_df.columns]
+    if typ_df is not None and target_feature in typ_df.columns and target_feature not in feature_targets:
+        feature_targets.append(target_feature)
+    selected: List[str] = []
+    selected_set: set[str] = set()
+    covered: set[str] = set()
+
+    for nb in candidates:
+        if nb in selected_set:
+            continue
+        obs = _observed_correlated_set(nb, feature_targets)
+        if not obs:
+            continue
+        if obs - covered:
+            selected.append(nb)
+            selected_set.add(nb)
+            covered.update(obs)
+            if len(selected) >= k and (not feature_targets or covered.issuperset(feature_targets)):
+                return selected[:k]
+
+    if len(selected) < k:
+        for nb in candidates:
+            if nb in selected_set:
+                continue
+            if _observed_correlated_set(nb, feature_targets):
+                selected.append(nb)
+                selected_set.add(nb)
+                if len(selected) >= k:
+                    return selected[:k]
+
+    if len(selected) < k:
+        for nb in candidates:
+            if nb in selected_set:
+                continue
+            selected.append(nb)
+            selected_set.add(nb)
+            if len(selected) >= k:
+                return selected[:k]
+
+    return selected[:k]
+
+
 def _collect_neighbor_facts(
     glottocode: str, target_feature: str, correlated: Sequence[str], limit: int = 12
 ) -> List[Tuple[str, str]]:
@@ -165,7 +339,10 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append(f"- {feat}: {_format_value(val)} ({status})")
 
     user_lines.append("Phylogenetic neighbors (top-k):")
-    for i, nb in enumerate(genetic_neighbours.get(language, []), start=1):
+    phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
+    phylo_candidates = _ranked_phylo_candidates(language)
+    phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
+    for i, nb in enumerate(phylo_neighbors, start=1):
         nb_meta = metadata_df.loc[nb] if nb in metadata_df.index else None
         nb_name = _get_meta_value(nb_meta, "name", nb)
         user_lines.append(f"{i}) {nb_name} (glottocode={nb}, dist={i}):")
@@ -177,24 +354,26 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
                 user_lines.append(f"- {feat_name}: {feat_val}")
 
     user_lines.append("Geographic neighbors (top-k):")
+    geo_k = _neighbor_k_for_language(geographic_neighbours, language)
+    geo_candidates = _ranked_geo_candidates(language)
+    geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
     lat_val = None if lat == "None" else float(lat)
     lon_val = None if lon == "None" else float(lon)
-    if lat_val is not None and lon_val is not None:
-        for i, nb in enumerate(geographic_neighbours.get(language, []), start=1):
-            nb_meta = metadata_df.loc[nb] if nb in metadata_df.index else None
-            nb_name = _get_meta_value(nb_meta, "name", nb)
-            nb_lat = _get_meta_value(nb_meta, "latitude", "None")
-            nb_lon = _get_meta_value(nb_meta, "longitude", "None")
-            km = "unknown"
-            if nb_lat != "None" and nb_lon != "None":
-                km = f"{_haversine_km(lat_val, lon_val, float(nb_lat), float(nb_lon)):.1f}"
-            user_lines.append(f"{i}) {nb_name} (glottocode={nb}, km={km}):")
-            facts = _collect_neighbor_facts(nb, feature, correlated)
-            if not facts:
-                user_lines.append("- (no observed anchor facts)")
-            else:
-                for feat_name, feat_val in facts:
-                    user_lines.append(f"- {feat_name}: {feat_val}")
+    for i, nb in enumerate(geo_neighbors, start=1):
+        nb_meta = metadata_df.loc[nb] if nb in metadata_df.index else None
+        nb_name = _get_meta_value(nb_meta, "name", nb)
+        nb_lat = _get_meta_value(nb_meta, "latitude", "None")
+        nb_lon = _get_meta_value(nb_meta, "longitude", "None")
+        km = "unknown"
+        if lat_val is not None and lon_val is not None and nb_lat != "None" and nb_lon != "None":
+            km = f"{_haversine_km(lat_val, lon_val, float(nb_lat), float(nb_lon)):.1f}"
+        user_lines.append(f"{i}) {nb_name} (glottocode={nb}, km={km}):")
+        facts = _collect_neighbor_facts(nb, feature, correlated)
+        if not facts:
+            user_lines.append("- (no observed anchor facts)")
+        else:
+            for feat_name, feat_val in facts:
+                user_lines.append(f"- {feat_name}: {feat_val}")
 
     allowed = _allowed_values(feature)
     user_lines.append("Task:")
