@@ -9,6 +9,8 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 import pandas as pd
 
+VALID_CONFIDENCE = {"low", "medium", "high"}
+
 
 def _load_prompting_module(path: str):
     spec = importlib.util.spec_from_file_location("prompting_impl", path)
@@ -36,9 +38,9 @@ def _rewrite_output_contract(user_prompt: str) -> str:
     return (
         f"{prefix}\n"
         "Output format (STRICT):\n"
-        "Return exactly one JSON object on one line:\n"
+        "Return exactly one minified JSON object on one line with keys in this exact order:\n"
         '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 30 words>"}\n'
-        "Do not output anything else."
+        "Use double quotes only. No Markdown, no code fences, no extra text."
     )
 
 
@@ -111,6 +113,71 @@ def _extract_json_fields(text: str) -> Tuple[str | None, str | None, str | None]
         None if confidence is None else str(confidence).lower(),
         None if rationale is None else str(rationale),
     )
+
+
+def _normalize_confidence(value: str | None) -> str:
+    if not value:
+        return "low"
+    v = value.strip().lower()
+    if v in VALID_CONFIDENCE:
+        return v
+    if "high" in v:
+        return "high"
+    if "med" in v:
+        return "medium"
+    if "low" in v:
+        return "low"
+    return "low"
+
+
+def _normalize_rationale(value: str | None) -> str:
+    text = "" if value is None else " ".join(str(value).split())
+    words = text.split()
+    if not words:
+        return "Insufficient direct evidence."
+    return " ".join(words[:30])
+
+
+def _normalize_value(parsed: str | None, raw_output: str, allowed_values: Sequence[str]) -> str | None:
+    allowed = [str(v) for v in allowed_values]
+    if not allowed:
+        return parsed
+
+    candidates: List[str] = []
+    if parsed is not None:
+        candidates.append(str(parsed).strip())
+    for pattern in (
+        r'"value"\s*:\s*"([^"]+)"',
+        r'"value"\s*:\s*([^\s,}]+)',
+    ):
+        for m in re.finditer(pattern, raw_output, flags=re.IGNORECASE):
+            candidates.append(m.group(1).strip().strip('"').strip("'"))
+
+    for cand in candidates:
+        if cand in allowed:
+            return cand
+        if re.fullmatch(r"-?\d+(?:\.0+)?", cand):
+            normalized = str(int(float(cand)))
+            if normalized in allowed:
+                return normalized
+
+    for val in sorted(set(allowed), key=len, reverse=True):
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(val)}(?![A-Za-z0-9_])", raw_output):
+            return val
+
+    return allowed[0]
+
+
+def _load_model(AutoModelForCausalLM, model_name: str, dtype, use_cuda: bool):
+    model_kwargs = {"dtype": dtype}
+    if use_cuda:
+        model_kwargs["device_map"] = "auto"
+    try:
+        return AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    except TypeError:
+        model_kwargs.pop("dtype", None)
+        model_kwargs["torch_dtype"] = dtype
+        return AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
 
 def _build_topk_map(topk_df: pd.DataFrame) -> Dict[str, List[str]]:
@@ -218,18 +285,18 @@ def main() -> None:
     else:
         torch_dtype = getattr(torch, args.dtype)
 
-    model_kwargs = {"torch_dtype": torch_dtype}
-    if use_cuda:
-        model_kwargs["device_map"] = "auto"
-
     tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer.padding_side = "left"
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    model = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs)
+    model = _load_model(AutoModelForCausalLM, args.model, torch_dtype, use_cuda)
     model.eval()
 
     outputs: List[dict] = []
     do_sample = args.temperature > 0
+    if not do_sample and hasattr(model, "generation_config"):
+        model.generation_config.temperature = None
+        model.generation_config.top_p = None
     for chunk in _chunked(records, args.batch_size):
         prompts = []
         for rec in chunk:
@@ -272,15 +339,18 @@ def main() -> None:
             gen_ids = generated[i, int(input_lens[i]) :]
             raw_output = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
             value, confidence, rationale = _extract_json_fields(raw_output)
+            normalized_value = _normalize_value(value, raw_output, rec.get("allowed_values", []))
+            normalized_confidence = _normalize_confidence(confidence)
+            normalized_rationale = _normalize_rationale(rationale)
             outputs.append(
                 {
                     "id": rec["id"],
                     "resource_group": rec["resource_group"],
                     "language": rec["language"],
                     "feature": rec["feature"],
-                    "value": value,
-                    "confidence": confidence,
-                    "rationale": rationale,
+                    "value": normalized_value,
+                    "confidence": normalized_confidence,
+                    "rationale": normalized_rationale,
                     "output": raw_output,
                 }
             )

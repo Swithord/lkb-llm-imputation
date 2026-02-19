@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
 
+VALID_CONFIDENCE = {"low", "medium", "high"}
+
 
 def _read_jsonl(path: str) -> List[dict]:
     rows: List[dict] = []
@@ -45,6 +47,71 @@ def _extract_json_fields(text: str) -> Tuple[str | None, str | None, str | None]
     )
 
 
+def _normalize_confidence(value: str | None) -> str:
+    if not value:
+        return "low"
+    v = value.strip().lower()
+    if v in VALID_CONFIDENCE:
+        return v
+    if "high" in v:
+        return "high"
+    if "med" in v:
+        return "medium"
+    if "low" in v:
+        return "low"
+    return "low"
+
+
+def _normalize_rationale(value: str | None) -> str:
+    text = "" if value is None else " ".join(str(value).split())
+    words = text.split()
+    if not words:
+        return "Insufficient direct evidence."
+    return " ".join(words[:30])
+
+
+def _normalize_value(parsed: str | None, raw_output: str, allowed_values: Sequence[str]) -> str | None:
+    allowed = [str(v) for v in allowed_values]
+    if not allowed:
+        return parsed
+
+    candidates: List[str] = []
+    if parsed is not None:
+        candidates.append(str(parsed).strip())
+    for pattern in (
+        r'"value"\s*:\s*"([^"]+)"',
+        r'"value"\s*:\s*([^\s,}]+)',
+    ):
+        for m in re.finditer(pattern, raw_output, flags=re.IGNORECASE):
+            candidates.append(m.group(1).strip().strip('"').strip("'"))
+
+    for cand in candidates:
+        if cand in allowed:
+            return cand
+        if re.fullmatch(r"-?\d+(?:\.0+)?", cand):
+            normalized = str(int(float(cand)))
+            if normalized in allowed:
+                return normalized
+
+    for val in sorted(set(allowed), key=len, reverse=True):
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(val)}(?![A-Za-z0-9_])", raw_output):
+            return val
+
+    return allowed[0]
+
+
+def _load_model(AutoModelForCausalLM, model_name: str, dtype, use_cuda: bool):
+    model_kwargs = {"dtype": dtype}
+    if use_cuda:
+        model_kwargs["device_map"] = "auto"
+    try:
+        return AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    except TypeError:
+        model_kwargs.pop("dtype", None)
+        model_kwargs["torch_dtype"] = dtype
+        return AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Run inference on prompt JSONL produced by benchmark/build_benchmark.py.")
     p.add_argument("--in", dest="input_jsonl", type=str, required=True)
@@ -81,17 +148,17 @@ def main() -> None:
     else:
         torch_dtype = getattr(torch, args.dtype)
 
-    model_kwargs = {"torch_dtype": torch_dtype}
-    if use_cuda:
-        model_kwargs["device_map"] = "auto"
-
     tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer.padding_side = "left"
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    model = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs)
+    model = _load_model(AutoModelForCausalLM, args.model, torch_dtype, use_cuda)
     model.eval()
 
     do_sample = args.temperature > 0
+    if not do_sample and hasattr(model, "generation_config"):
+        model.generation_config.temperature = None
+        model.generation_config.top_p = None
     outputs: List[dict] = []
 
     for chunk in _chunked(rows, args.batch_size):
@@ -136,15 +203,18 @@ def main() -> None:
             gen_ids = generated[i, int(input_lens[i]) :]
             raw_output = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
             value, confidence, rationale = _extract_json_fields(raw_output)
+            normalized_value = _normalize_value(value, raw_output, rec.get("allowed_values", []))
+            normalized_confidence = _normalize_confidence(confidence)
+            normalized_rationale = _normalize_rationale(rationale)
             outputs.append(
                 {
                     "id": rec.get("id"),
                     "resource_group": rec.get("resource_group"),
                     "language": rec.get("language"),
                     "feature": rec.get("feature"),
-                    "value": value,
-                    "confidence": confidence,
-                    "rationale": rationale,
+                    "value": normalized_value,
+                    "confidence": normalized_confidence,
+                    "rationale": normalized_rationale,
                     "output": raw_output,
                 }
             )

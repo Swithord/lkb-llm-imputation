@@ -40,9 +40,9 @@ def _rewrite_output_contract(user_prompt: str) -> str:
     return (
         f"{prefix}\n"
         "Output format (STRICT):\n"
-        "Return exactly one JSON object on one line:\n"
+        "Return exactly one minified JSON object on one line with keys in this exact order:\n"
         '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 30 words>"}\n'
-        "Do not output anything else."
+        "Use double quotes only. No Markdown, no code fences, no extra text."
     )
 
 
