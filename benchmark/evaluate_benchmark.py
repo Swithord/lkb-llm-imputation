@@ -7,16 +7,19 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 
-CONF_SCORE = {"low": 0.33, "medium": 0.66, "high": 0.90}
+DEFAULT_CONF_SCORE = {"low": 0.33, "medium": 0.66, "high": 0.90}
 
 
-def _parse_pred_line(obj: dict) -> Tuple[str | None, str | None, str | None]:
+def _parse_from_fields(obj: dict) -> Tuple[str | None, str | None, str | None]:
     if "value" in obj:
         value = obj.get("value")
         conf = obj.get("confidence")
         rat = obj.get("rationale")
         return (None if value is None else str(value), None if conf is None else str(conf).lower(), None if rat is None else str(rat))
+    return (None, None, None)
 
+
+def _parse_from_output(obj: dict) -> Tuple[str | None, str | None, str | None]:
     raw = obj.get("output")
     if raw is None:
         return (None, None, None)
@@ -45,35 +48,16 @@ def _safe_div(a: float, b: float) -> float:
     return a / b if b else 0.0
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description="Evaluate benchmark predictions with confidence/rationale checks.")
-    p.add_argument("--gold", type=str, default="benchmark/gold_eval.jsonl")
-    p.add_argument("--pred", type=str, required=True, help="JSONL with `id` and either (`value`,`confidence`,`rationale`) or `output`.")
-    p.add_argument("--report_out", type=str, default=None, help="Optional JSON report path.")
-    args = p.parse_args()
-
-    gold: Dict[str, dict] = {}
-    for line in Path(args.gold).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        gold[rec["id"]] = rec
-
-    pred: Dict[str, dict] = {}
-    for line in Path(args.pred).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        pid = rec.get("id")
-        if pid:
-            pred[str(pid)] = rec
-
-    groups = {
+def _init_groups() -> Dict[str, Dict[str, int]]:
+    return {
         "overall": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
         "high": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
         "low": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
     }
 
+
+def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf_score: Dict[str, float]) -> dict:
+    groups = _init_groups()
     brier_sum = 0.0
     brier_n = 0
     ece_bins = [{"n": 0, "acc_sum": 0.0, "conf_sum": 0.0} for _ in range(10)]
@@ -83,7 +67,12 @@ def main() -> None:
         gval = str(grec["gold_value"])
         allowed = set(str(x) for x in grec.get("allowed_values", []))
         prec = pred.get(gid, {})
-        pval, pconf, prat = _parse_pred_line(prec)
+        if view == "strict_raw":
+            pval, pconf, prat = _parse_from_output(prec)
+        else:
+            pval, pconf, prat = _parse_from_fields(prec)
+            if pval is None and pconf is None and prat is None:
+                pval, pconf, prat = _parse_from_output(prec)
 
         for key in ("overall", group):
             groups[key]["n"] += 1
@@ -100,8 +89,8 @@ def main() -> None:
             if rationale_ok:
                 groups[key]["rationale_ok"] += 1
 
-        if pconf in CONF_SCORE and parsed:
-            c = CONF_SCORE[pconf]
+        if pconf in conf_score and parsed:
+            c = conf_score[pconf]
             y = 1.0 if correct else 0.0
             brier_sum += (c - y) ** 2
             brier_n += 1
@@ -144,6 +133,51 @@ def main() -> None:
             "high_conf_coverage": _safe_div(v["high_conf_n"], v["n"]),
             "rationale_ok_rate": _safe_div(v["rationale_ok"], v["n"]),
         }
+    return report
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description="Evaluate benchmark predictions with confidence/rationale checks.")
+    p.add_argument("--gold", type=str, default="benchmark/gold_eval.jsonl")
+    p.add_argument("--pred", type=str, required=True, help="JSONL with `id` and either (`value`,`confidence`,`rationale`) or `output`.")
+    p.add_argument("--confidence_map", type=str, default=None, help="Optional JSON file mapping low/medium/high to probability.")
+    p.add_argument("--report_out", type=str, default=None, help="Optional JSON report path.")
+    args = p.parse_args()
+
+    conf_score = dict(DEFAULT_CONF_SCORE)
+    if args.confidence_map:
+        loaded = json.loads(Path(args.confidence_map).read_text(encoding="utf-8"))
+        if isinstance(loaded, dict) and "map" in loaded and isinstance(loaded["map"], dict):
+            loaded = loaded["map"]
+        for key in ("low", "medium", "high"):
+            if key in loaded:
+                conf_score[key] = float(loaded[key])
+
+    gold: Dict[str, dict] = {}
+    for line in Path(args.gold).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        gold[rec["id"]] = rec
+
+    pred: Dict[str, dict] = {}
+    for line in Path(args.pred).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        pid = rec.get("id")
+        if pid:
+            pred[str(pid)] = rec
+
+    normalized = _evaluate_view(gold, pred, "normalized", conf_score)
+    strict_raw = _evaluate_view(gold, pred, "strict_raw", conf_score)
+
+    report = {
+        "confidence_map": conf_score,
+        "normalized": normalized,
+        "strict_raw": strict_raw,
+        "legacy": normalized,
+    }
 
     print(json.dumps(report, indent=2))
 
