@@ -1,0 +1,41 @@
+{
+  "counts": {
+    "overall": {
+      "n": 1433
+    },
+    "high": {
+      "n": 1000
+    },
+    "low": {
+      "n": 433
+    }
+  },
+  "metrics": {
+    "overall": {
+      "accuracy": 0.7773900907187719,
+      "parsed_rate": 1.0,
+      "high_conf_accuracy": 0.8092691622103387,
+      "high_conf_coverage": 0.39148639218422887,
+      "rationale_ok_rate": 1.0
+    },
+    "high": {
+      "accuracy": 0.789,
+      "parsed_rate": 1.0,
+      "high_conf_accuracy": 0.8401937046004843,
+      "high_conf_coverage": 0.413,
+      "rationale_ok_rate": 1.0
+    },
+    "low": {
+      "accuracy": 0.7505773672055427,
+      "parsed_rate": 1.0,
+      "high_conf_accuracy": 0.722972972972973,
+      "high_conf_coverage": 0.3418013856812933,
+      "rationale_ok_rate": 1.0
+    }
+  },
+  "calibration": {
+    "brier_on_correctness": 0.28627878576412796,
+    "ece_10bin": 0.29505233775296025,
+    "n_with_valid_confidence": 1433
+  }
+}

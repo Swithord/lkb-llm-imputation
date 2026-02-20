@@ -1,0 +1,23 @@
+{
+  "mode": "normalized",
+  "base_rate": 0.7773900907187719,
+  "counts": {
+    "low": {
+      "n": 871,
+      "correct": 659
+    },
+    "medium": {
+      "n": 1,
+      "correct": 1
+    },
+    "high": {
+      "n": 561,
+      "correct": 454
+    }
+  },
+  "map": {
+    "low": 0.756601607347876,
+    "medium": 1.0,
+    "high": 0.8092691622103387
+  }
+}
