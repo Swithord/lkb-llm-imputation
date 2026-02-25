@@ -8,6 +8,7 @@ code/__pycache__/
 # Prevent re-adding oversized generated artifacts.
 out_corr/X.npy
 output/all_missing_prompts.jsonl
+output/missing_prompts_with_neighbor_fallback.jsonl
 
 # Large external dataset directory kept locally only.
 glottolog/

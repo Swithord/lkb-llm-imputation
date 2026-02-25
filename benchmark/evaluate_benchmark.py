@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Dict, Tuple
 
+from schema_io import load_gold_jsonl, load_predictions_jsonl
+
 
 DEFAULT_CONF_SCORE = {"low": 0.33, "medium": 0.66, "high": 0.90}
 
@@ -153,21 +155,8 @@ def main() -> None:
             if key in loaded:
                 conf_score[key] = float(loaded[key])
 
-    gold: Dict[str, dict] = {}
-    for line in Path(args.gold).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        gold[rec["id"]] = rec
-
-    pred: Dict[str, dict] = {}
-    for line in Path(args.pred).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        pid = rec.get("id")
-        if pid:
-            pred[str(pid)] = rec
+    gold = load_gold_jsonl(args.gold)
+    pred = load_predictions_jsonl(args.pred)
 
     normalized = _evaluate_view(gold, pred, "normalized", conf_score)
     strict_raw = _evaluate_view(gold, pred, "strict_raw", conf_score)

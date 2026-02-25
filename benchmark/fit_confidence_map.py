@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Dict, Tuple
 
+from schema_io import load_gold_jsonl, load_predictions_jsonl
+
 DEFAULT_CONF = {"low": 0.33, "medium": 0.66, "high": 0.90}
 
 
@@ -48,21 +50,8 @@ def main() -> None:
     p.add_argument("--out", type=str, default="benchmark/confidence_map.json")
     args = p.parse_args()
 
-    gold: Dict[str, dict] = {}
-    for line in Path(args.gold).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        gold[str(rec["id"])] = rec
-
-    pred: Dict[str, dict] = {}
-    for line in Path(args.pred).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        pid = rec.get("id")
-        if pid:
-            pred[str(pid)] = rec
+    gold = load_gold_jsonl(args.gold)
+    pred = load_predictions_jsonl(args.pred)
 
     counts = {k: {"n": 0, "correct": 0} for k in ("low", "medium", "high")}
     total_correct = 0

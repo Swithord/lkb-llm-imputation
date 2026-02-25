@@ -36,6 +36,24 @@ Use your preferred inference runner. Make sure prediction records include `id` a
 - direct fields: `value`, `confidence`, `rationale`, or
 - field `output` containing a JSON object string with those keys.
 
+Example with the included runner:
+
+```bash
+.venv/bin/python benchmark/infer_from_prompts.py \
+  --in benchmark/prompts_eval_high.jsonl \
+  --out benchmark/predictions_eval_high.jsonl \
+  --model meta-llama/Llama-3.2-3B-Instruct \
+  --device cuda \
+  --batch_size 4
+
+.venv/bin/python benchmark/infer_from_prompts.py \
+  --in benchmark/prompts_eval_low.jsonl \
+  --out benchmark/predictions_eval_low.jsonl \
+  --model meta-llama/Llama-3.2-3B-Instruct \
+  --device cuda \
+  --batch_size 4
+```
+
 ## 3) Evaluate predictions
 
 ```bash
@@ -51,6 +69,54 @@ Metrics include:
 - high-confidence accuracy + coverage,
 - rationale quality rate (non-empty and <= 30 words),
 - calibration (`brier_on_correctness`, `ece_10bin`).
+
+The evaluator reports both:
+- `normalized`: metrics on normalized prediction fields (`value/confidence/rationale`).
+- `strict_raw`: metrics parsed directly from model raw text in `output`.
+
+## 3b) Fit confidence calibration map
+
+```bash
+.venv/bin/python benchmark/fit_confidence_map.py \
+  --gold benchmark/gold_eval.jsonl \
+  --pred benchmark/predictions_eval.jsonl \
+  --mode normalized \
+  --out benchmark/confidence_map.json
+```
+
+Then re-evaluate with calibrated confidence:
+
+```bash
+.venv/bin/python benchmark/evaluate_benchmark.py \
+  --gold benchmark/gold_eval.jsonl \
+  --pred benchmark/predictions_eval.jsonl \
+  --confidence_map benchmark/confidence_map.json \
+  --report_out benchmark/report_eval_calibrated.json
+```
+
+No-leakage option (fit on train split, evaluate on held-out split):
+
+```bash
+.venv/bin/python benchmark/split_calibration_eval.py \
+  --gold benchmark/gold_eval.jsonl \
+  --pred benchmark/predictions_eval.jsonl \
+  --mode normalized \
+  --split_by language \
+  --test_frac 0.2 \
+  --seed 7 \
+  --out benchmark/split_calibration_report.json
+```
+
+## 3c) Per-feature error analysis
+
+```bash
+.venv/bin/python benchmark/feature_error_analysis.py \
+  --gold benchmark/gold_eval.jsonl \
+  --pred benchmark/predictions_eval.jsonl \
+  --mode normalized \
+  --min_n 10 \
+  --out benchmark/feature_errors.json
+```
 
 ## 4) Run all-missing evaluation prompts on GPU
 

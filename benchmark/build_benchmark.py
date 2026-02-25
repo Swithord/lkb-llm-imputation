@@ -46,6 +46,23 @@ def _rewrite_output_contract(user_prompt: str) -> str:
     )
 
 
+def _extract_structured_description(user_prompt: str) -> str:
+    marker = "\nTask:"
+    if marker in user_prompt:
+        return user_prompt.split(marker, 1)[0].rstrip()
+    return user_prompt.rstrip()
+
+
+def _parse_binary_gold(gold_value: str, item_id: str) -> int:
+    try:
+        val = int(float(gold_value))
+    except Exception as e:
+        raise ValueError(f"Gold value is not numeric for {item_id}: {gold_value}") from e
+    if val not in (0, 1):
+        raise ValueError(f"Gold value is not binary for {item_id}: {gold_value}")
+    return val
+
+
 def _pick_language_groups(
     typ_df: pd.DataFrame, high_n: int, low_n: int, min_observed_low: int
 ) -> Dict[str, List[str]]:
@@ -104,6 +121,9 @@ def main() -> None:
     p.add_argument("--prompts_high_out", type=str, default="benchmark/prompts_eval_high.jsonl")
     p.add_argument("--prompts_low_out", type=str, default="benchmark/prompts_eval_low.jsonl")
     p.add_argument("--gold_out", type=str, default="benchmark/gold_eval.jsonl")
+    p.add_argument("--examples_out", type=str, default="benchmark/examples_eval.jsonl")
+    p.add_argument("--examples_high_out", type=str, default="benchmark/examples_eval_high.jsonl")
+    p.add_argument("--examples_low_out", type=str, default="benchmark/examples_eval_low.jsonl")
     p.add_argument("--groups_out", type=str, default="benchmark/language_groups.json")
     args = p.parse_args()
 
@@ -143,12 +163,18 @@ def main() -> None:
     Path(args.prompts_high_out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.prompts_low_out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.gold_out).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.examples_out).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.examples_high_out).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.examples_low_out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.groups_out).parent.mkdir(parents=True, exist_ok=True)
 
     with open(args.prompts_out, "w", encoding="utf-8") as fp, \
         open(args.prompts_high_out, "w", encoding="utf-8") as fph, \
         open(args.prompts_low_out, "w", encoding="utf-8") as fpl, \
-        open(args.gold_out, "w", encoding="utf-8") as fg:
+        open(args.gold_out, "w", encoding="utf-8") as fg, \
+        open(args.examples_out, "w", encoding="utf-8") as fe, \
+        open(args.examples_high_out, "w", encoding="utf-8") as feh, \
+        open(args.examples_low_out, "w", encoding="utf-8") as fel:
         for i, (group, lang, feat) in enumerate(pairs):
             gold_raw = typ_df.at[lang, feat]
             gold_value = str(int(gold_raw)) if isinstance(gold_raw, float) and gold_raw.is_integer() else str(gold_raw)
@@ -181,6 +207,14 @@ def main() -> None:
                 "gold_value": gold_value,
                 "allowed_values": allowed_values,
             }
+            example_rec = {
+                "example_id": item_id,
+                "language_id": lang,
+                "feature_id": feat,
+                "gold": _parse_binary_gold(gold_value, item_id),
+                "resource_group": group,
+                "r_L": _extract_structured_description(user),
+            }
             prompt_line = json.dumps(prompt_rec, ensure_ascii=False) + "\n"
             fp.write(prompt_line)
             if group == "high":
@@ -188,6 +222,12 @@ def main() -> None:
             elif group == "low":
                 fpl.write(prompt_line)
             fg.write(json.dumps(gold_rec, ensure_ascii=False) + "\n")
+            example_line = json.dumps(example_rec, ensure_ascii=False) + "\n"
+            fe.write(example_line)
+            if group == "high":
+                feh.write(example_line)
+            elif group == "low":
+                fel.write(example_line)
 
     Path(args.groups_out).write_text(json.dumps(groups, ensure_ascii=False, indent=2))
 
@@ -195,6 +235,9 @@ def main() -> None:
     print(f"Wrote high prompts: {args.prompts_high_out}")
     print(f"Wrote low prompts:  {args.prompts_low_out}")
     print(f"Wrote gold:    {args.gold_out}")
+    print(f"Wrote examples: {args.examples_out}")
+    print(f"Wrote high examples: {args.examples_high_out}")
+    print(f"Wrote low examples:  {args.examples_low_out}")
     print(f"Wrote groups:  {args.groups_out}")
     print(f"Num prompts:   {len(pairs)}")
 

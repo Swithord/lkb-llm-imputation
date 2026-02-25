@@ -7,37 +7,37 @@ import pandas as pd
 from pyglottolog import Glottolog
 
 
-def _disable_imputation_deps():
-    # Avoid importing heavy imputation stack (fancyimpute -> cvxpy) unless needed.
-    if "fancyimpute" in sys.modules:
-        return
-    class _SoftImputeStub:
-        def __init__(self, *args, **kwargs):
-            raise RuntimeError("SoftImpute is disabled in this run.")
-
-    stub = type(sys)("fancyimpute")
-    stub.SoftImpute = _SoftImputeStub
-    sys.modules["fancyimpute"] = stub
-
-
 def _safe_call(obj, method, *args, **kwargs):
-    if not hasattr(obj, method):
+    fn = getattr(obj, method, None)
+    if fn is None:
         return False
     try:
-        getattr(obj, method)(*args, **kwargs)
+        fn(*args, **kwargs)
     except SystemExit:
         return False
     except FileNotFoundError as e:
-        # Some URIEL+ integrations (e.g., APICS/Grambank) require this optional file.
-        if "duplicate_feature_sets.json" in str(e):
-            return False
-        raise
+        if "duplicate_feature_sets.json" not in str(e):
+            raise
+        return False
     except Exception as e:
-        msg = str(e).lower()
-        if "already integrated" in msg:
-            return False
-        raise
+        if "already integrated" not in str(e).lower():
+            raise
+        return False
     return True
+
+
+_PER_SOURCE_INTEGRATIONS = (
+    "integrate_saphon",
+    "integrate_bdproto",
+    "integrate_apics",
+    "integrate_ewave",
+    "inferred_features",
+)
+
+
+def _integrate_per_source(u):
+    for method in _PER_SOURCE_INTEGRATIONS:
+        _safe_call(u, method)
 
 
 def _should_regenerate_neighbours(path):
@@ -188,7 +188,6 @@ def compute_geographic_neighbours(languages, k=5, output_path="geographic_neighb
 
 
 if __name__ == '__main__':
-    _disable_imputation_deps()
     from urielplus.urielplus import URIELPlus
     import argparse
 
@@ -211,41 +210,13 @@ if __name__ == '__main__':
         raise
     input_path = os.environ.get("GLOTTOLOG_PATH", "./glottolog")
     glottolog = Glottolog(input_path)
-    # Construct the URIEL+ typological dataframe, with glottocodes as the index and typological features as columns
-    # (No need to impute, but you will need to integrate databases.
-    # You might want to repeat this process for both union aggregation and average aggregation)
+    # Construct the URIEL+ typological dataframe, 
+    # with glottocodes as the index and typological features as columns
     if not args.metadata_only:
         if args.use_integrate_databases:
-            try:
-                # Prevent URIEL+ from terminating the process via sys.exit
-                _orig_exit = sys.exit
-                sys.exit = lambda code=0: (_ for _ in ()).throw(SystemExit(code))
-                try:
-                    u.integrate_databases()
-                finally:
-                    sys.exit = _orig_exit
-            except SystemExit:
-                _safe_call(u, "integrate_saphon")
-                _safe_call(u, "integrate_bdproto")
-                _safe_call(u, "integrate_apics")
-                _safe_call(u, "integrate_ewave")
-                _safe_call(u, "inferred_features")
-            except Exception as e:
-                msg = str(e).lower()
-                if "duplicate_feature_sets.json" in str(e):
-                    _safe_call(u, "integrate_saphon")
-                    _safe_call(u, "integrate_bdproto")
-                    _safe_call(u, "integrate_apics")
-                    _safe_call(u, "integrate_ewave")
-                    _safe_call(u, "inferred_features")
-                elif "already integrated" not in msg:
-                    raise
+            u.integrate_databases()
         else:
-            _safe_call(u, "integrate_saphon")
-            _safe_call(u, "integrate_bdproto")
-            _safe_call(u, "integrate_apics")
-            _safe_call(u, "integrate_ewave")
-            _safe_call(u, "inferred_features")
+            _integrate_per_source(u)
     # Skip set_glottocodes(): URIEL+ is already configured for glottocodes in this setup.
 
     if args.metadata_only:
@@ -273,7 +244,6 @@ if __name__ == '__main__':
     # Compute and save the language metadata (skip if already present)
     if not os.path.exists("metadata.csv"):
         get_metadata(languages, glottolog, output_path="metadata.csv")
-    # Compute the correlation matrix and save it
     # Extract the list of languages (in glottocode) in URIEL+
     languages = list(languages)
     # Compute the genetic neighbours and save it
