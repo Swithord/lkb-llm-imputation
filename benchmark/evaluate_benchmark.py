@@ -3,9 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Dict, Tuple
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from eval_metrics import compute_binary_metrics
 from schema_io import load_gold_jsonl, load_predictions_jsonl
 
 
@@ -60,9 +66,8 @@ def _init_groups() -> Dict[str, Dict[str, int]]:
 
 def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf_score: Dict[str, float]) -> dict:
     groups = _init_groups()
-    brier_sum = 0.0
-    brier_n = 0
-    ece_bins = [{"n": 0, "acc_sum": 0.0, "conf_sum": 0.0} for _ in range(10)]
+    corr_for_cal: list[int] = []
+    prob_for_cal: list[float] = []
 
     for gid, grec in gold.items():
         group = grec["resource_group"]
@@ -94,13 +99,8 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
         if pconf in conf_score and parsed:
             c = conf_score[pconf]
             y = 1.0 if correct else 0.0
-            brier_sum += (c - y) ** 2
-            brier_n += 1
-
-            bi = min(9, max(0, int(c * 10)))
-            ece_bins[bi]["n"] += 1
-            ece_bins[bi]["acc_sum"] += y
-            ece_bins[bi]["conf_sum"] += c
+            corr_for_cal.append(int(y))
+            prob_for_cal.append(float(c))
 
             for key in ("overall", group):
                 if pconf == "high":
@@ -108,20 +108,23 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
                     if correct:
                         groups[key]["high_conf_correct"] += 1
 
-    ece = 0.0
-    if brier_n:
-        for b in ece_bins:
-            if b["n"] == 0:
-                continue
-            acc = b["acc_sum"] / b["n"]
-            conf = b["conf_sum"] / b["n"]
-            ece += (b["n"] / brier_n) * abs(acc - conf)
+    if prob_for_cal:
+        # Dummy labels from probabilities are only used to satisfy API shape checks.
+        cal_pred = [1 if p >= 0.5 else 0 for p in prob_for_cal]
+        cal_metrics = compute_binary_metrics(corr_for_cal, cal_pred, y_prob=prob_for_cal, include_ece=True, ece_bins=10)
+        brier = float(cal_metrics["brier"])
+        ece = float(cal_metrics["ece"])
+        brier_n = len(prob_for_cal)
+    else:
+        brier = 0.0
+        ece = 0.0
+        brier_n = 0
 
     report = {
         "counts": {k: {"n": v["n"]} for k, v in groups.items()},
         "metrics": {},
         "calibration": {
-            "brier_on_correctness": _safe_div(brier_sum, brier_n),
+            "brier_on_correctness": brier,
             "ece_10bin": ece,
             "n_with_valid_confidence": brier_n,
         },

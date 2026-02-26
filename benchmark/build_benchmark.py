@@ -39,10 +39,16 @@ def _rewrite_output_contract(user_prompt: str) -> str:
     prefix = user_prompt.split(marker)[0].rstrip()
     return (
         f"{prefix}\n"
-        "Output format (STRICT):\n"
+        "Prompt version: v3_strict_json\n"
+        "Output format (STRICT JSON):\n"
+        "Output ONLY valid JSON.\n"
         "Return exactly one minified JSON object on one line with keys in this exact order:\n"
         '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 30 words>"}\n'
-        "Use double quotes only. No Markdown, no code fences, no extra text."
+        "Use double quotes only. No Markdown, no code fences, no extra text.\n"
+        "Few-shot examples:\n"
+        '{"value":"0","confidence":"high","rationale":"Neighbor evidence strongly favors value 0 with consistent signals."}\n'
+        '{"value":"1","confidence":"medium","rationale":"Phylogenetic evidence favors 1 but geographic evidence is mixed."}\n'
+        '{"value":"0","confidence":"low","rationale":"Evidence is sparse and conflicting; defaulting to the more common value."}'
     )
 
 

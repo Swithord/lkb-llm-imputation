@@ -25,6 +25,8 @@ genetic_neighbours: dict
 geographic_neighbours: dict
 top_n_features: int
 topk_map: Dict[str, List[str]]
+PROMPT_VERSION: str = "v3_strict_json"
+INCLUDE_VOTE_TABLE: bool = True
 
 
 def _is_missing(v) -> bool:
@@ -301,6 +303,95 @@ def _iter_missing_pairs(df: pd.DataFrame) -> Iterator[Tuple[str, str]]:
                 yield str(lang), str(feat)
 
 
+def set_prompt_options(prompt_version: str | None = None, include_vote_table: bool | None = None) -> None:
+    global PROMPT_VERSION, INCLUDE_VOTE_TABLE
+    if prompt_version is not None:
+        PROMPT_VERSION = str(prompt_version)
+    if include_vote_table is not None:
+        INCLUDE_VOTE_TABLE = bool(include_vote_table)
+
+
+def _count_votes(neighbors: Sequence[str], feature: str) -> Dict[str, int]:
+    counts = {"yes": 0, "no": 0, "missing": 0}
+    if typ_df is None or feature not in typ_df.columns:
+        counts["missing"] = len(neighbors)
+        return counts
+    for nb in neighbors:
+        if nb not in typ_df.index:
+            counts["missing"] += 1
+            continue
+        val = typ_df.at[nb, feature]
+        if _is_missing(val):
+            counts["missing"] += 1
+        elif int(float(val)) == 1:
+            counts["yes"] += 1
+        else:
+            counts["no"] += 1
+    return counts
+
+
+def compute_neighbor_votes(
+    language: str,
+    feature: str,
+    phylo_neighbors: Sequence[str] | None = None,
+    geo_neighbors: Sequence[str] | None = None,
+) -> Dict[str, Dict[str, float | int | str]]:
+    if phylo_neighbors is None:
+        phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
+        phylo_candidates = _ranked_phylo_candidates(language)
+        correlated = _top_correlated_features(feature, top_n_features)
+        phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
+    if geo_neighbors is None:
+        geo_k = _neighbor_k_for_language(geographic_neighbours, language)
+        geo_candidates = _ranked_geo_candidates(language)
+        correlated = _top_correlated_features(feature, top_n_features)
+        geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
+
+    phylo_counts = _count_votes(phylo_neighbors, feature)
+    geo_counts = _count_votes(geo_neighbors, feature)
+    combined = {
+        "yes": phylo_counts["yes"] + geo_counts["yes"],
+        "no": phylo_counts["no"] + geo_counts["no"],
+        "missing": phylo_counts["missing"] + geo_counts["missing"],
+    }
+
+    def _yes_ratio(c: Dict[str, int]) -> float:
+        denom = c["yes"] + c["no"]
+        return (c["yes"] / denom) if denom else 0.0
+
+    def _majority(c: Dict[str, int]) -> str:
+        if c["yes"] > c["no"]:
+            return "yes"
+        if c["no"] > c["yes"]:
+            return "no"
+        return "tie"
+
+    def _agreement_ratio(c: Dict[str, int]) -> float:
+        denom = c["yes"] + c["no"]
+        return (max(c["yes"], c["no"]) / denom) if denom else 0.0
+
+    return {
+        "genetic": {
+            **phylo_counts,
+            "yes_ratio": _yes_ratio(phylo_counts),
+            "majority": _majority(phylo_counts),
+            "agreement_ratio": _agreement_ratio(phylo_counts),
+        },
+        "geographic": {
+            **geo_counts,
+            "yes_ratio": _yes_ratio(geo_counts),
+            "majority": _majority(geo_counts),
+            "agreement_ratio": _agreement_ratio(geo_counts),
+        },
+        "overall": {
+            **combined,
+            "yes_ratio": _yes_ratio(combined),
+            "majority": _majority(combined),
+            "agreement_ratio": _agreement_ratio(combined),
+        },
+    }
+
+
 def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     """
     Construct the prompt for the given language and feature.
@@ -338,10 +429,31 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         status = "missing" if _is_missing(val) else "observed"
         user_lines.append(f"- {feat}: {_format_value(val)} ({status})")
 
-    user_lines.append("Phylogenetic neighbors (top-k):")
     phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
     phylo_candidates = _ranked_phylo_candidates(language)
     phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
+    geo_k = _neighbor_k_for_language(geographic_neighbours, language)
+    geo_candidates = _ranked_geo_candidates(language)
+    geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
+
+    if INCLUDE_VOTE_TABLE:
+        votes = compute_neighbor_votes(language, feature, phylo_neighbors=phylo_neighbors, geo_neighbors=geo_neighbors)
+        g = votes["genetic"]
+        geo = votes["geographic"]
+        ov = votes["overall"]
+        user_lines.append("Neighbor vote summary (target feature only):")
+        user_lines.append(
+            f"- Genetic vote: {g['yes']} yes / {g['no']} no / {g['missing']} unk ({g['yes_ratio']:.0%} yes)"
+        )
+        user_lines.append(
+            f"- Geo vote: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk ({geo['yes_ratio']:.0%} yes)"
+        )
+        user_lines.append(
+            f"- Overall: {ov['yes']} yes / {ov['no']} no ({ov['yes_ratio']:.0%} yes; "
+            f"majority={ov['majority']}; agreement={ov['agreement_ratio']:.0%})"
+        )
+
+    user_lines.append("Phylogenetic neighbors (top-k):")
     for i, nb in enumerate(phylo_neighbors, start=1):
         nb_meta = metadata_df.loc[nb] if nb in metadata_df.index else None
         nb_name = _get_meta_value(nb_meta, "name", nb)
@@ -354,9 +466,6 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
                 user_lines.append(f"- {feat_name}: {feat_val}")
 
     user_lines.append("Geographic neighbors (top-k):")
-    geo_k = _neighbor_k_for_language(geographic_neighbours, language)
-    geo_candidates = _ranked_geo_candidates(language)
-    geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
     lat_val = None if lat == "None" else float(lat)
     lon_val = None if lon == "None" else float(lon)
     for i, nb in enumerate(geo_neighbors, start=1):
@@ -376,13 +485,37 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
                 user_lines.append(f"- {feat_name}: {feat_val}")
 
     allowed = _allowed_values(feature)
-    user_lines.append("Task:")
-    user_lines.append("Predict the missing value for the following feature:")
-    user_lines.append(f"- Feature: {feature}")
-    user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
-    user_lines.append("Output format (STRICT):")
-    user_lines.append("Return exactly one allowed value.")
-    user_lines.append("Do not provide explanations.")
+    if PROMPT_VERSION == "v3_strict_json":
+        user_lines.append("Prompt version: v3_strict_json")
+        user_lines.append("Task:")
+        user_lines.append("Predict the missing value for the following feature:")
+        user_lines.append(f"- Feature: {feature}")
+        user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
+        user_lines.append("Output format (STRICT JSON):")
+        user_lines.append("Output ONLY valid JSON.")
+        user_lines.append("Return exactly one minified JSON object on one line.")
+        user_lines.append(
+            '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 20 words>"}'
+        )
+        user_lines.append("No Markdown, no prose, no code fences, no trailing text.")
+        user_lines.append("Few-shot examples:")
+        user_lines.append(
+            '{"value":"0","confidence":"high","rationale":"Neighbor votes strongly favor value 0 with high agreement."}'
+        )
+        user_lines.append(
+            '{"value":"1","confidence":"medium","rationale":"Phylogenetic evidence favors 1, while geographic evidence is mixed."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"low","rationale":"Evidence is sparse and conflicting; defaulting to the more common value."}'
+        )
+    else:
+        user_lines.append("Task:")
+        user_lines.append("Predict the missing value for the following feature:")
+        user_lines.append(f"- Feature: {feature}")
+        user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
+        user_lines.append("Output format (STRICT):")
+        user_lines.append("Return exactly one allowed value.")
+        user_lines.append("Do not provide explanations.")
 
     user = "\n".join(user_lines)
     return system, user
@@ -461,6 +594,13 @@ def main() -> None:
     p.add_argument("--out", type=str, required=True, help="Output file. JSONL for prompts mode, JSON for predict mode.")
     p.add_argument("--model", type=str, default="meta-llama/Llama-3.2-3B-Instruct")
     p.add_argument("--max_new_tokens", type=int, default=8)
+    p.add_argument("--prompt_version", type=str, default="v3_strict_json")
+    p.add_argument(
+        "--include_vote_table",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include compact genetic/geo vote summary table for target feature.",
+    )
     args = p.parse_args()
 
     global typ_df, metadata_df, genetic_neighbours, geographic_neighbours, top_n_features, topk_map
@@ -489,6 +629,8 @@ def main() -> None:
     for feat, items in tmp.items():
         items.sort(key=lambda x: x[0])
         topk_map[feat] = [other for _, other in items]
+
+    set_prompt_options(args.prompt_version, args.include_vote_table)
 
     if args.impute:
         impute_pairs: Iterable[Tuple[str, str]] = _load_impute_pairs(args.impute)

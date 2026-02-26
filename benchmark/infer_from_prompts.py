@@ -161,6 +161,11 @@ def _slice_to_first_json_object(text: str) -> str:
     return s
 
 
+def _decode_tokens(tokenizer, token_ids: list[int]) -> str:
+    tokens = tokenizer.convert_ids_to_tokens(token_ids, skip_special_tokens=True)
+    return tokenizer.convert_tokens_to_string(tokens).strip()
+
+
 def _normalize_confidence(value: str | None) -> str:
     if not value:
         return "low"
@@ -232,10 +237,12 @@ def _resolve_eos_token_ids(tokenizer, stop_at_closing_brace: bool):
         eos_ids.append(int(tokenizer.eos_token_id))
     brace_enabled = False
     if stop_at_closing_brace:
-        brace_ids = tokenizer.encode("}", add_special_tokens=False)
-        if len(brace_ids) == 1:
-            eos_ids.append(int(brace_ids[0]))
-            brace_enabled = True
+        for stop_seq in ("}\n", "})", "}"):
+            stop_ids = tokenizer.encode(stop_seq, add_special_tokens=False)
+            if len(stop_ids) == 1:
+                eos_ids.append(int(stop_ids[0]))
+                brace_enabled = True
+                break
     eos_ids = sorted(set(eos_ids))
     if not eos_ids:
         return None, brace_enabled
@@ -354,7 +361,7 @@ def main() -> None:
         input_lens = inputs["attention_mask"].sum(dim=1).tolist()
         for i, rec in enumerate(chunk):
             gen_ids = generated[i, int(input_lens[i]) :]
-            raw_output = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
+            raw_output = _decode_tokens(tokenizer, gen_ids.detach().cpu().tolist())
             json_view = _slice_to_first_json_object(raw_output)
             value, confidence, rationale = _extract_json_fields(json_view)
             normalized_value = _normalize_value(value, json_view, rec.get("allowed_values", []))
