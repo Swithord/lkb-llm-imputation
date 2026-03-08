@@ -438,6 +438,36 @@ def compute_neighbor_votes(
     }
 
 
+def _target_feature_value(glottocode: str, feature: str) -> str | None:
+    if typ_df is None or glottocode not in typ_df.index or feature not in typ_df.columns:
+        return None
+    val = typ_df.at[glottocode, feature]
+    if _is_missing(val):
+        return None
+    return _format_value(val)
+
+
+def _feature_prevalence_prior(feature: str) -> tuple[str, float]:
+    """
+    Return majority value and its observed fraction for the target feature.
+    Tie-break is deterministic by lexical value order.
+    """
+    if typ_df is None or feature not in typ_df.columns:
+        return "0", 0.5
+    counts: Dict[str, int] = {}
+    total = 0
+    for v in typ_df[feature].tolist():
+        if _is_missing(v):
+            continue
+        key = _format_value(v)
+        counts[key] = counts.get(key, 0) + 1
+        total += 1
+    if total == 0 or not counts:
+        return "0", 0.5
+    best_val, best_count = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0]
+    return best_val, (best_count / total)
+
+
 def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     """
     Construct the prompt for the given language and feature.
@@ -464,8 +494,37 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     user_lines.append(f"- Macro-area: {macro}")
     user_lines.append(f"- Location: latitude={lat}, longitude={lon}")
 
-    user_lines.append("Observed typological facts (anchor features):")
+    phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
+    phylo_candidates = _ranked_phylo_candidates(language)
     correlated = _effective_correlated_features(language, feature, top_n_features)
+    phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
+    geo_k = _neighbor_k_for_language(geographic_neighbours, language)
+    geo_candidates = _ranked_geo_candidates(language)
+    geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
+    phylo_neighbors = _prioritize_neighbors_with_target_value(phylo_neighbors, feature)
+    geo_neighbors = _prioritize_neighbors_with_target_value(geo_neighbors, feature)
+
+    votes = compute_neighbor_votes(language, feature, phylo_neighbors=phylo_neighbors, geo_neighbors=geo_neighbors)
+    prior_value, prior_ratio = _feature_prevalence_prior(feature)
+
+    if INCLUDE_VOTE_TABLE:
+        g = votes["genetic"]
+        geo = votes["geographic"]
+        ov = votes["overall"]
+        user_lines.append("Target-feature vote counts (primary evidence):")
+        user_lines.append(
+            f"- Genetic vote: {g['yes']} yes / {g['no']} no / {g['missing']} unk ({g['yes_ratio']:.0%} yes)"
+        )
+        user_lines.append(
+            f"- Geo vote: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk ({geo['yes_ratio']:.0%} yes)"
+        )
+        user_lines.append(
+            f"- Overall: {ov['yes']} yes / {ov['no']} no ({ov['yes_ratio']:.0%} yes; "
+            f"majority={ov['majority']}; agreement={ov['agreement_ratio']:.0%})"
+        )
+        user_lines.append(f"- Feature prevalence prior: value={prior_value} ({prior_ratio:.0%} of observed)")
+
+    user_lines.append("Observed typological facts (anchor features):")
     anchor_limit = 5
     observed_anchor_count = 0
     for feat in correlated:
@@ -485,43 +544,16 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     elif len(correlated) > anchor_limit:
         user_lines.append("- (truncated to top observed anchors)")
 
-    phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
-    phylo_candidates = _ranked_phylo_candidates(language)
-    phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
-    geo_k = _neighbor_k_for_language(geographic_neighbours, language)
-    geo_candidates = _ranked_geo_candidates(language)
-    geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
-    phylo_neighbors = _prioritize_neighbors_with_target_value(phylo_neighbors, feature)
-    geo_neighbors = _prioritize_neighbors_with_target_value(geo_neighbors, feature)
-
-    if INCLUDE_VOTE_TABLE:
-        votes = compute_neighbor_votes(language, feature, phylo_neighbors=phylo_neighbors, geo_neighbors=geo_neighbors)
-        g = votes["genetic"]
-        geo = votes["geographic"]
-        ov = votes["overall"]
-        user_lines.append("Neighbor vote summary (target feature only):")
-        user_lines.append(
-            f"- Genetic vote: {g['yes']} yes / {g['no']} no / {g['missing']} unk ({g['yes_ratio']:.0%} yes)"
-        )
-        user_lines.append(
-            f"- Geo vote: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk ({geo['yes_ratio']:.0%} yes)"
-        )
-        user_lines.append(
-            f"- Overall: {ov['yes']} yes / {ov['no']} no ({ov['yes_ratio']:.0%} yes; "
-            f"majority={ov['majority']}; agreement={ov['agreement_ratio']:.0%})"
-        )
-
     user_lines.append("Phylogenetic neighbors (top-k):")
     for i, nb in enumerate(phylo_neighbors, start=1):
         nb_meta = metadata_df.loc[nb] if nb in metadata_df.index else None
         nb_name = _get_meta_value(nb_meta, "name", nb)
         user_lines.append(f"{i}) {nb_name} (glottocode={nb}, dist={i}):")
-        facts = _collect_neighbor_facts(nb, feature, correlated)
-        if not facts:
-            user_lines.append("- (no observed anchor facts)")
+        target_val = _target_feature_value(nb, feature)
+        if target_val is None:
+            user_lines.append("- target feature: unobserved")
         else:
-            for feat_name, feat_val in facts:
-                user_lines.append(f"- {feat_name}: {feat_val}")
+            user_lines.append(f"- {feature}: {target_val}")
 
     user_lines.append("Geographic neighbors (top-k):")
     lat_val = None if lat == "None" else float(lat)
@@ -535,12 +567,11 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         if lat_val is not None and lon_val is not None and nb_lat != "None" and nb_lon != "None":
             km = f"{_haversine_km(lat_val, lon_val, float(nb_lat), float(nb_lon)):.1f}"
         user_lines.append(f"{i}) {nb_name} (glottocode={nb}, km={km}):")
-        facts = _collect_neighbor_facts(nb, feature, correlated)
-        if not facts:
-            user_lines.append("- (no observed anchor facts)")
+        target_val = _target_feature_value(nb, feature)
+        if target_val is None:
+            user_lines.append("- target feature: unobserved")
         else:
-            for feat_name, feat_val in facts:
-                user_lines.append(f"- {feat_name}: {feat_val}")
+            user_lines.append(f"- {feature}: {target_val}")
 
     allowed = _allowed_values(feature)
     if PROMPT_VERSION == "v3_strict_json":
@@ -551,6 +582,10 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
         user_lines.append("Output format (STRICT JSON):")
         user_lines.append("Output ONLY valid JSON.")
+        user_lines.append("Deterministic decision rule:")
+        user_lines.append("1) Use overall vote majority on target-feature yes/no counts (ignore unknown).")
+        user_lines.append("2) If tied or no overall evidence, use phylogenetic vote majority.")
+        user_lines.append(f"3) If still tied or no evidence, use feature prevalence prior (choose {prior_value}).")
         user_lines.append("Return exactly one minified JSON object on one line with keys: value, confidence, rationale.")
         user_lines.append("- value: one of the allowed values above")
         user_lines.append("- confidence: low, medium, or high")
