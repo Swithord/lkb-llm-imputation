@@ -292,27 +292,42 @@ def _select_neighbors_with_feature_coverage(
 
 
 def _collect_neighbor_facts(
-    glottocode: str, target_feature: str, correlated: Sequence[str], limit: int = 12
+    glottocode: str, target_feature: str, correlated: Sequence[str], limit: int = 4, max_correlated_fallback: int = 2
 ) -> List[Tuple[str, str]]:
     if typ_df is None or glottocode not in typ_df.index:
         return []
     facts: List[Tuple[str, str]] = []
 
+    # Put direct target-feature evidence first when available.
+    if target_feature in typ_df.columns:
+        val = typ_df.at[glottocode, target_feature]
+        if not _is_missing(val):
+            facts.append((target_feature, _format_value(val)))
+            if len(facts) >= limit:
+                return facts
+
+    fallback_used = 0
     for feat in correlated:
         if feat == target_feature or feat not in typ_df.columns:
             continue
         val = typ_df.at[glottocode, feat]
         if not _is_missing(val):
             facts.append((feat, _format_value(val)))
+            fallback_used += 1
         if len(facts) >= limit:
             return facts
-
-    if target_feature in typ_df.columns:
-        val = typ_df.at[glottocode, target_feature]
-        if not _is_missing(val) and len(facts) < limit:
-            facts.append((target_feature, _format_value(val)))
+        if fallback_used >= max_correlated_fallback:
+            return facts
 
     return facts
+
+
+def _prioritize_neighbors_with_target_value(neighbors: Sequence[str], target_feature: str) -> List[str]:
+    indexed = list(enumerate(neighbors))
+    indexed.sort(
+        key=lambda x: (0 if _lang_has_feature_value(str(x[1]), target_feature) else 1, x[0])
+    )
+    return [str(nb) for _, nb in indexed]
 
 
 def _allowed_values(feature: str) -> List[str]:
@@ -451,8 +466,11 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
 
     user_lines.append("Observed typological facts (anchor features):")
     correlated = _effective_correlated_features(language, feature, top_n_features)
+    anchor_limit = 5
     observed_anchor_count = 0
     for feat in correlated:
+        if observed_anchor_count >= anchor_limit:
+            break
         if feat == feature:
             continue
         if typ_df is not None and feat not in typ_df.columns:
@@ -464,6 +482,8 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         observed_anchor_count += 1
     if observed_anchor_count == 0:
         user_lines.append("- (no observed anchor facts)")
+    elif len(correlated) > anchor_limit:
+        user_lines.append("- (truncated to top observed anchors)")
 
     phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
     phylo_candidates = _ranked_phylo_candidates(language)
@@ -471,6 +491,8 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     geo_k = _neighbor_k_for_language(geographic_neighbours, language)
     geo_candidates = _ranked_geo_candidates(language)
     geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
+    phylo_neighbors = _prioritize_neighbors_with_target_value(phylo_neighbors, feature)
+    geo_neighbors = _prioritize_neighbors_with_target_value(geo_neighbors, feature)
 
     if INCLUDE_VOTE_TABLE:
         votes = compute_neighbor_votes(language, feature, phylo_neighbors=phylo_neighbors, geo_neighbors=geo_neighbors)
