@@ -86,6 +86,37 @@ def _top_correlated_features(feature: str, top_n: int) -> List[str]:
     return feats[:top_n] if top_n > 0 else feats
 
 
+def _effective_correlated_features(language: str, feature: str, primary_n: int, fallback_n: int = 15) -> List[str]:
+    """
+    Adaptive correlated-feature selection:
+    start from top-N, and expand to top-15 when observed coverage is too sparse.
+    """
+    ranked = _top_correlated_features(feature, 0)
+    filtered = [f for f in ranked if f != feature and (typ_df is None or f in typ_df.columns)]
+    if not filtered:
+        return []
+    if primary_n <= 0:
+        return filtered
+
+    primary = filtered[: min(primary_n, len(filtered))]
+    if typ_df is None or language not in typ_df.index:
+        return primary
+
+    observed_primary = sum(1 for f in primary if _lang_has_feature_value(language, f))
+    min_needed = 3 if primary_n >= 5 else 1
+    if observed_primary >= min_needed:
+        return primary
+
+    if fallback_n <= primary_n:
+        return primary
+
+    extended = filtered[: min(fallback_n, len(filtered))]
+    observed_extended = sum(1 for f in extended if _lang_has_feature_value(language, f))
+    if observed_extended > observed_primary:
+        return extended
+    return primary
+
+
 def _neighbor_k_for_language(neighbour_map: dict, language: str, fallback: int = 5) -> int:
     direct = neighbour_map.get(language, [])
     if isinstance(direct, list) and len(direct) > 0:
@@ -339,12 +370,12 @@ def compute_neighbor_votes(
     if phylo_neighbors is None:
         phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
         phylo_candidates = _ranked_phylo_candidates(language)
-        correlated = _top_correlated_features(feature, top_n_features)
+        correlated = _effective_correlated_features(language, feature, top_n_features)
         phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
     if geo_neighbors is None:
         geo_k = _neighbor_k_for_language(geographic_neighbours, language)
         geo_candidates = _ranked_geo_candidates(language)
-        correlated = _top_correlated_features(feature, top_n_features)
+        correlated = _effective_correlated_features(language, feature, top_n_features)
         geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
 
     phylo_counts = _count_votes(phylo_neighbors, feature)
@@ -419,15 +450,20 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     user_lines.append(f"- Location: latitude={lat}, longitude={lon}")
 
     user_lines.append("Observed typological facts (anchor features):")
-    correlated = _top_correlated_features(feature, top_n_features)
+    correlated = _effective_correlated_features(language, feature, top_n_features)
+    observed_anchor_count = 0
     for feat in correlated:
         if feat == feature:
             continue
         if typ_df is not None and feat not in typ_df.columns:
             continue
         val = typ_df.at[language, feat] if (typ_df is not None and language in typ_df.index) else None
-        status = "missing" if _is_missing(val) else "observed"
-        user_lines.append(f"- {feat}: {_format_value(val)} ({status})")
+        if _is_missing(val):
+            continue
+        user_lines.append(f"- {feat}: {_format_value(val)}")
+        observed_anchor_count += 1
+    if observed_anchor_count == 0:
+        user_lines.append("- (no observed anchor facts)")
 
     phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
     phylo_candidates = _ranked_phylo_candidates(language)
@@ -493,20 +529,14 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
         user_lines.append("Output format (STRICT JSON):")
         user_lines.append("Output ONLY valid JSON.")
-        user_lines.append("Return exactly one minified JSON object on one line.")
-        user_lines.append(
-            '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 20 words>"}'
-        )
+        user_lines.append("Return exactly one minified JSON object on one line with keys: value, confidence, rationale.")
+        user_lines.append("- value: one of the allowed values above")
+        user_lines.append("- confidence: low, medium, or high")
+        user_lines.append("- rationale: at most 20 words")
         user_lines.append("No Markdown, no prose, no code fences, no trailing text.")
-        user_lines.append("Few-shot examples:")
+        user_lines.append("Example output:")
         user_lines.append(
-            '{"value":"0","confidence":"high","rationale":"Neighbor votes strongly favor value 0 with high agreement."}'
-        )
-        user_lines.append(
-            '{"value":"1","confidence":"medium","rationale":"Phylogenetic evidence favors 1, while geographic evidence is mixed."}'
-        )
-        user_lines.append(
-            '{"value":"0","confidence":"low","rationale":"Evidence is sparse and conflicting; defaulting to the more common value."}'
+            '{"value":"0","confidence":"high","rationale":"Closest genetic and geographic neighbors mostly support value 0."}'
         )
     else:
         user_lines.append("Task:")

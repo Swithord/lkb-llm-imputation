@@ -97,12 +97,46 @@ def _extract_json_fields(text: str) -> Tuple[str | None, str | None, str | None]
     try:
         parsed = json.loads(raw)
     except Exception:
-        m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-        if m:
-            try:
-                parsed = json.loads(m.group(0))
-            except Exception:
-                parsed = None
+        parsed = None
+
+    if not isinstance(parsed, dict):
+        candidates: List[dict] = []
+        start = raw.find("{")
+        if start >= 0:
+            depth = 0
+            in_string = False
+            escaped = False
+            seg_start = -1
+            for i in range(start, len(raw)):
+                ch = raw[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                    continue
+                if ch == '"':
+                    in_string = True
+                    continue
+                if ch == "{":
+                    if depth == 0:
+                        seg_start = i
+                    depth += 1
+                elif ch == "}":
+                    if depth > 0:
+                        depth -= 1
+                        if depth == 0 and seg_start >= 0:
+                            segment = raw[seg_start : i + 1]
+                            try:
+                                obj = json.loads(segment)
+                                if isinstance(obj, dict):
+                                    candidates.append(obj)
+                            except Exception:
+                                pass
+        if candidates:
+            parsed = candidates[-1]
     if not isinstance(parsed, dict):
         return None, None, None
     value = parsed.get("value")
@@ -119,6 +153,8 @@ def _normalize_confidence(value: str | None) -> str:
     if not value:
         return "low"
     v = value.strip().lower()
+    if "|" in v or "<" in v or ">" in v:
+        return "low"
     if v in VALID_CONFIDENCE:
         return v
     if "high" in v:
@@ -132,6 +168,9 @@ def _normalize_confidence(value: str | None) -> str:
 
 def _normalize_rationale(value: str | None) -> str:
     text = "" if value is None else " ".join(str(value).split())
+    lower = text.lower()
+    if "<max" in lower or "<one" in lower:
+        return "Insufficient direct evidence."
     words = text.split()
     if not words:
         return "Insufficient direct evidence."

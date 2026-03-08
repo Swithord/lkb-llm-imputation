@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Dict, Tuple
@@ -27,28 +26,71 @@ def _parse_from_fields(obj: dict) -> Tuple[str | None, str | None, str | None]:
     return (None, None, None)
 
 
+def _extract_last_json_object(text: str) -> dict | None:
+    s = str(text).strip()
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    candidates: list[dict] = []
+    start = s.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    seg_start = -1
+    for i in range(start, len(s)):
+        ch = s[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            if depth == 0:
+                seg_start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and seg_start >= 0:
+                    seg = s[seg_start : i + 1]
+                    try:
+                        obj = json.loads(seg)
+                        if isinstance(obj, dict):
+                            candidates.append(obj)
+                    except Exception:
+                        pass
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
 def _parse_from_output(obj: dict) -> Tuple[str | None, str | None, str | None]:
     raw = obj.get("output")
     if raw is None:
         return (None, None, None)
-    text = str(raw).strip()
-    try:
-        parsed = json.loads(text)
+    parsed = _extract_last_json_object(str(raw))
+    if isinstance(parsed, dict):
         value = parsed.get("value")
         conf = parsed.get("confidence")
         rat = parsed.get("rationale")
-        return (None if value is None else str(value), None if conf is None else str(conf).lower(), None if rat is None else str(rat))
-    except Exception:
-        m = re.search(r"\{.*\}", text)
-        if m:
-            try:
-                parsed = json.loads(m.group(0))
-                value = parsed.get("value")
-                conf = parsed.get("confidence")
-                rat = parsed.get("rationale")
-                return (None if value is None else str(value), None if conf is None else str(conf).lower(), None if rat is None else str(rat))
-            except Exception:
-                pass
+        return (
+            None if value is None else str(value),
+            None if conf is None else str(conf).lower(),
+            None if rat is None else str(rat),
+        )
     return (None, None, None)
 
 
