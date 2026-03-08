@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/project/6102153/vivianqw/lkb-llm-imputation/benchmark/build_prompts_from_gold.py", line 9, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
