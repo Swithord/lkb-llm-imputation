@@ -494,9 +494,10 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     user_lines.append(f"- Macro-area: {macro}")
     user_lines.append(f"- Location: latitude={lat}, longitude={lon}")
 
+    # Accuracy-focused ablation: use target-feature vote evidence only.
     phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
     phylo_candidates = _ranked_phylo_candidates(language)
-    correlated = _effective_correlated_features(language, feature, top_n_features)
+    correlated: list[str] = []
     phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
     geo_k = _neighbor_k_for_language(geographic_neighbours, language)
     geo_candidates = _ranked_geo_candidates(language)
@@ -523,55 +524,6 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
             f"majority={ov['majority']}; agreement={ov['agreement_ratio']:.0%})"
         )
         user_lines.append(f"- Feature prevalence prior: value={prior_value} ({prior_ratio:.0%} of observed)")
-
-    user_lines.append("Observed typological facts (anchor features):")
-    anchor_limit = 5
-    observed_anchor_count = 0
-    for feat in correlated:
-        if observed_anchor_count >= anchor_limit:
-            break
-        if feat == feature:
-            continue
-        if typ_df is not None and feat not in typ_df.columns:
-            continue
-        val = typ_df.at[language, feat] if (typ_df is not None and language in typ_df.index) else None
-        if _is_missing(val):
-            continue
-        user_lines.append(f"- {feat}: {_format_value(val)}")
-        observed_anchor_count += 1
-    if observed_anchor_count == 0:
-        user_lines.append("- (no observed anchor facts)")
-    elif len(correlated) > anchor_limit:
-        user_lines.append("- (truncated to top observed anchors)")
-
-    user_lines.append("Phylogenetic neighbors (top-k):")
-    for i, nb in enumerate(phylo_neighbors, start=1):
-        nb_meta = metadata_df.loc[nb] if nb in metadata_df.index else None
-        nb_name = _get_meta_value(nb_meta, "name", nb)
-        user_lines.append(f"{i}) {nb_name} (glottocode={nb}, dist={i}):")
-        target_val = _target_feature_value(nb, feature)
-        if target_val is None:
-            user_lines.append("- target feature: unobserved")
-        else:
-            user_lines.append(f"- {feature}: {target_val}")
-
-    user_lines.append("Geographic neighbors (top-k):")
-    lat_val = None if lat == "None" else float(lat)
-    lon_val = None if lon == "None" else float(lon)
-    for i, nb in enumerate(geo_neighbors, start=1):
-        nb_meta = metadata_df.loc[nb] if nb in metadata_df.index else None
-        nb_name = _get_meta_value(nb_meta, "name", nb)
-        nb_lat = _get_meta_value(nb_meta, "latitude", "None")
-        nb_lon = _get_meta_value(nb_meta, "longitude", "None")
-        km = "unknown"
-        if lat_val is not None and lon_val is not None and nb_lat != "None" and nb_lon != "None":
-            km = f"{_haversine_km(lat_val, lon_val, float(nb_lat), float(nb_lon)):.1f}"
-        user_lines.append(f"{i}) {nb_name} (glottocode={nb}, km={km}):")
-        target_val = _target_feature_value(nb, feature)
-        if target_val is None:
-            user_lines.append("- target feature: unobserved")
-        else:
-            user_lines.append(f"- {feature}: {target_val}")
 
     allowed = _allowed_values(feature)
     if PROMPT_VERSION == "v3_strict_json":
