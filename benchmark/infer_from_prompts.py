@@ -13,23 +13,32 @@ DEFAULT_SYSTEM = (
     "(1) observed facts about the target language,\n"
     "(2) evidence from phylogenetic and geographic neighbors,\n"
     "and (3) well-established linguistic universals.\n"
-    "If evidence conflicts, prefer phylogenetic evidence over geographic evidence.\n"
-    "If uncertainty remains, choose the most typologically common value."
+    "Compare the evidence for value 0 versus value 1.\n"
+    "Neighbor counts are useful, but do not follow majority vote blindly.\n"
+    "A smaller number of closer or more relevant neighbors may outweigh a larger number of weaker neighbors.\n"
+    "It is acceptable to predict a minority value if it is better supported by the target language's observed properties and closest evidence.\n"
+    "Use feature prevalence only as a weak tie-breaker when the evidence is otherwise balanced."
 )
 STRICT_JSON_MARKER = "You MUST output exactly one JSON object"
 STRICT_JSON_SYSTEM_BLOCK = (
+    "Reasoning policy:\n"
+    "- Compare the support for value 0 versus value 1.\n"
+    "- Neighbor counts are useful, but do not follow majority vote blindly.\n"
+    "- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.\n"
+    "- It is acceptable to predict a minority value if it is better supported by the overall evidence.\n"
+    "- Use prevalence only as a weak tie-breaker if the evidence is otherwise balanced.\n"
     "Output policy (STRICT JSON):\n"
     "You MUST output exactly one JSON object with keys in this exact order:\n"
-    '{"value":"0|1","confidence":"low|medium|high","rationale":"<max 30 words>"}\n'
+    '{"value":"0|1","confidence":"low|medium|high","rationale":"<max 20 words>"}\n'
     "Rules:\n"
     "- Output ONLY valid JSON.\n"
     "- No markdown.\n"
     "- No explanations outside JSON.\n"
-    "- `rationale` must be at most 30 words.\n"
+    "- `rationale` must be at most 20 words.\n"
     "Valid examples:\n"
-    '{"value":"0","confidence":"high","rationale":"Phylogenetic and geographic neighbors consistently support value 0 for this feature."}\n'
-    '{"value":"1","confidence":"medium","rationale":"Evidence is mixed, but related languages slightly favor value 1 overall."}\n'
-    '{"value":"0","confidence":"low","rationale":"Evidence is sparse and conflicting; defaulting to the more common value."}'
+    '{"value":"1","confidence":"medium","rationale":"Most neighbors are 0, but the closest and most similar languages support 1."}\n'
+    '{"value":"1","confidence":"high","rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1."}\n'
+    '{"value":"0","confidence":"low","rationale":"Evidence is balanced, so the weak prevalence prior favors 0."}'
 )
 
 
@@ -72,10 +81,21 @@ def _canonical_to_prompt_record(rec: dict) -> dict:
         "Predict the missing value for the following feature:\n"
         f"- Feature: {feature}\n"
         f"- Allowed values: {' | '.join(allowed)}\n"
-        "Output format (STRICT):\n"
+        "Reasoning guidance:\n"
+        "- Compare the support for value 0 versus value 1.\n"
+        "- Neighbor counts are useful, but do not follow majority vote blindly.\n"
+        "- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.\n"
+        "- It is acceptable to predict a minority value if it is better supported by the overall evidence.\n"
+        "- Use prevalence only as a weak tie-breaker if the evidence is otherwise balanced.\n"
+        "Output format (STRICT JSON):\n"
+        "Output ONLY valid JSON.\n"
         "Return exactly one minified JSON object on one line with keys in this exact order:\n"
-        '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 30 words>"}\n'
-        "Use double quotes only. No Markdown, no code fences, no extra text."
+        '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 20 words>"}\n'
+        "Use double quotes only. No Markdown, no code fences, no extra text.\n"
+        "Few-shot examples:\n"
+        '{"value":"1","confidence":"medium","rationale":"Most neighbors are 0, but the closest and most similar languages support 1."}\n'
+        '{"value":"1","confidence":"high","rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1."}\n'
+        '{"value":"0","confidence":"low","rationale":"Evidence is balanced, so the weak prevalence prior favors 0."}'
     )
     return {
         "id": str(rec["example_id"]),

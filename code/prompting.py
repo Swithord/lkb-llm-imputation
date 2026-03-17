@@ -15,8 +15,11 @@ SYSTEM_MESSAGE = (
     "(1) observed facts about the target language,\n"
     "(2) evidence from phylogenetic and geographic neighbors,\n"
     "and (3) well-established linguistic universals.\n"
-    "If evidence conflicts, prefer phylogenetic evidence over geographic evidence.\n"
-    "If uncertainty remains, choose the most typologically common value."
+    "Compare the evidence for value 0 versus value 1.\n"
+    "Neighbor counts are useful, but do not follow majority vote blindly.\n"
+    "A smaller number of closer or more relevant neighbors may outweigh a larger number of weaker neighbors.\n"
+    "It is acceptable to predict a minority value if it is better supported by the target language's observed properties and closest evidence.\n"
+    "Use feature prevalence only as a weak tie-breaker when the evidence is otherwise balanced."
 )
 
 typ_df: Optional[pd.DataFrame]
@@ -27,6 +30,7 @@ top_n_features: int
 topk_map: Dict[str, List[str]]
 PROMPT_VERSION: str = "v3_strict_json"
 INCLUDE_VOTE_TABLE: bool = True
+clue_support_cache: Dict[Tuple[str, str, str], Tuple[int, int]] = {}
 
 
 def _is_missing(v) -> bool:
@@ -243,8 +247,21 @@ def _ranked_geo_candidates(language: str, pool_limit: int = 1200) -> List[str]:
     return ranked
 
 
+def _nearest_candidate_with_value(
+    candidates: Sequence[str], feature: str, desired_value: str
+) -> str | None:
+    for nb in candidates:
+        if _target_feature_value(str(nb), feature) == desired_value:
+            return str(nb)
+    return None
+
+
 def _select_neighbors_with_feature_coverage(
-    candidates: Sequence[str], correlated: Sequence[str], target_feature: str, k: int
+    candidates: Sequence[str],
+    correlated: Sequence[str],
+    target_feature: str,
+    k: int,
+    force_include: Sequence[str] | None = None,
 ) -> List[str]:
     if k <= 0:
         return []
@@ -255,6 +272,17 @@ def _select_neighbors_with_feature_coverage(
     selected: List[str] = []
     selected_set: set[str] = set()
     covered: set[str] = set()
+
+    if force_include:
+        for nb in force_include:
+            nb = str(nb)
+            if nb in selected_set or nb not in candidates:
+                continue
+            selected.append(nb)
+            selected_set.add(nb)
+            covered.update(_observed_correlated_set(nb, feature_targets))
+            if len(selected) >= k:
+                return selected[:k]
 
     for nb in candidates:
         if nb in selected_set:
@@ -330,6 +358,44 @@ def _prioritize_neighbors_with_target_value(neighbors: Sequence[str], target_fea
     return [str(nb) for _, nb in indexed]
 
 
+def _language_label(glottocode: str) -> str:
+    meta_row = metadata_df.loc[glottocode] if glottocode in metadata_df.index else None
+    return _get_meta_value(meta_row, "name", glottocode)
+
+
+def _observed_anchor_facts(language: str, target_feature: str, max_items: int = 5) -> List[Tuple[str, str]]:
+    if typ_df is None or language not in typ_df.index:
+        return []
+    anchors: List[Tuple[str, str]] = []
+    correlated = _effective_correlated_features(language, target_feature, top_n_features, fallback_n=15)
+    for feat in correlated:
+        if feat == target_feature or not _lang_has_feature_value(language, feat):
+            continue
+        anchors.append((feat, _format_value(typ_df.at[language, feat])))
+        if len(anchors) >= max_items:
+            break
+    return anchors
+
+
+def _nearest_supporting_neighbor(
+    language: str,
+    candidates: Sequence[str],
+    feature: str,
+    desired_value: str,
+    mode: str,
+) -> str | None:
+    lat0, lon0 = _meta_lat_lon(language)
+    for idx, nb in enumerate(candidates, start=1):
+        if _target_feature_value(nb, feature) != desired_value:
+            continue
+        if mode == "geographic" and lat0 is not None and lon0 is not None:
+            lat1, lon1 = _meta_lat_lon(nb)
+            if lat1 is not None and lon1 is not None:
+                return f"{_language_label(nb)} ({_haversine_km(lat0, lon0, lat1, lon1):.1f} km)"
+        return f"{_language_label(nb)} (rank {idx})"
+    return None
+
+
 def _allowed_values(feature: str) -> List[str]:
     if typ_df is None or feature not in typ_df.columns:
         return ["0", "1"]
@@ -386,12 +452,20 @@ def compute_neighbor_votes(
         phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
         phylo_candidates = _ranked_phylo_candidates(language)
         correlated = _effective_correlated_features(language, feature, top_n_features)
-        phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
+        phylo_yes = _nearest_candidate_with_value(phylo_candidates, feature, "1")
+        phylo_force = [phylo_yes] if phylo_yes is not None else []
+        phylo_neighbors = _select_neighbors_with_feature_coverage(
+            phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force
+        )
     if geo_neighbors is None:
         geo_k = _neighbor_k_for_language(geographic_neighbours, language)
         geo_candidates = _ranked_geo_candidates(language)
         correlated = _effective_correlated_features(language, feature, top_n_features)
-        geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
+        geo_yes = _nearest_candidate_with_value(geo_candidates, feature, "1")
+        geo_force = [geo_yes] if geo_yes is not None else []
+        geo_neighbors = _select_neighbors_with_feature_coverage(
+            geo_candidates, correlated, feature, geo_k, force_include=geo_force
+        )
 
     phylo_counts = _count_votes(phylo_neighbors, feature)
     geo_counts = _count_votes(geo_neighbors, feature)
@@ -468,6 +542,80 @@ def _feature_prevalence_prior(feature: str) -> tuple[str, float]:
     return best_val, (best_count / total)
 
 
+def _cached_clue_support(target_feature: str, clue_feature: str, clue_value: str) -> Tuple[int, int]:
+    """
+    Return counts of target-feature yes/no among languages where clue_feature==clue_value.
+    Uses a small cache to avoid repeated scans over the typology table.
+    """
+    key = (target_feature, clue_feature, clue_value)
+    if key in clue_support_cache:
+        return clue_support_cache[key]
+
+    if typ_df is None or target_feature not in typ_df.columns or clue_feature not in typ_df.columns:
+        clue_support_cache[key] = (0, 0)
+        return clue_support_cache[key]
+
+    yes = 0
+    no = 0
+    target_col = typ_df[target_feature]
+    clue_col = typ_df[clue_feature]
+    for t, c in zip(target_col.tolist(), clue_col.tolist()):
+        if _is_missing(t) or _is_missing(c):
+            continue
+        if _format_value(c) != clue_value:
+            continue
+        if int(float(t)) == 1:
+            yes += 1
+        else:
+            no += 1
+    clue_support_cache[key] = (yes, no)
+    return clue_support_cache[key]
+
+
+def _collect_target_correlated_clues(
+    language: str, target_feature: str, top_m: int = 3, min_support: int = 12
+) -> Tuple[List[Dict[str, str | int]], Dict[str, int]]:
+    """
+    Collect compact target-relevant clues from observed correlated features.
+    Each clue includes support counts over languages that share the same clue value.
+    """
+    clues: List[Dict[str, str | int]] = []
+    summary = {"yes": 0, "no": 0, "tie": 0, "n_used": 0}
+
+    correlated = _effective_correlated_features(language, target_feature, top_n_features, fallback_n=15)
+    for clue_feat in correlated:
+        if clue_feat == target_feature or not _lang_has_feature_value(language, clue_feat):
+            continue
+        clue_val = _format_value(typ_df.at[language, clue_feat]) if typ_df is not None else "Unknown"
+        yes, no = _cached_clue_support(target_feature, clue_feat, clue_val)
+        support_n = yes + no
+        if support_n < min_support:
+            continue
+        if yes > no:
+            majority = "yes"
+        elif no > yes:
+            majority = "no"
+        else:
+            majority = "tie"
+
+        clues.append(
+            {
+                "feature": clue_feat,
+                "value": clue_val,
+                "yes": yes,
+                "no": no,
+                "support_n": support_n,
+                "majority": majority,
+            }
+        )
+        summary[majority] += 1
+        summary["n_used"] += 1
+        if len(clues) >= top_m:
+            break
+
+    return clues, summary
+
+
 def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     """
     Construct the prompt for the given language and feature.
@@ -494,25 +642,44 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     user_lines.append(f"- Macro-area: {macro}")
     user_lines.append(f"- Location: latitude={lat}, longitude={lon}")
 
-    # Accuracy-focused ablation: use target-feature vote evidence only.
+    # Decision-focused context: target anchors, compact votes, and contrastive clues.
     phylo_k = _neighbor_k_for_language(genetic_neighbours, language)
     phylo_candidates = _ranked_phylo_candidates(language)
-    correlated: list[str] = []
-    phylo_neighbors = _select_neighbors_with_feature_coverage(phylo_candidates, correlated, feature, phylo_k)
+    correlated = _effective_correlated_features(language, feature, top_n_features, fallback_n=15)
+    phylo_yes_nb = _nearest_candidate_with_value(phylo_candidates, feature, "1")
+    phylo_force = [phylo_yes_nb] if phylo_yes_nb is not None else []
+    phylo_neighbors = _select_neighbors_with_feature_coverage(
+        phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force
+    )
     geo_k = _neighbor_k_for_language(geographic_neighbours, language)
     geo_candidates = _ranked_geo_candidates(language)
-    geo_neighbors = _select_neighbors_with_feature_coverage(geo_candidates, correlated, feature, geo_k)
-    phylo_neighbors = _prioritize_neighbors_with_target_value(phylo_neighbors, feature)
-    geo_neighbors = _prioritize_neighbors_with_target_value(geo_neighbors, feature)
+    geo_yes_nb = _nearest_candidate_with_value(geo_candidates, feature, "1")
+    geo_force = [geo_yes_nb] if geo_yes_nb is not None else []
+    geo_neighbors = _select_neighbors_with_feature_coverage(
+        geo_candidates, correlated, feature, geo_k, force_include=geo_force
+    )
 
     votes = compute_neighbor_votes(language, feature, phylo_neighbors=phylo_neighbors, geo_neighbors=geo_neighbors)
+    clues, clue_summary = _collect_target_correlated_clues(language, feature, top_m=3, min_support=12)
     prior_value, prior_ratio = _feature_prevalence_prior(feature)
+    anchors = _observed_anchor_facts(language, feature, max_items=5)
+    phylo_yes = _nearest_supporting_neighbor(language, phylo_candidates, feature, "1", mode="phylogenetic")
+    phylo_no = _nearest_supporting_neighbor(language, phylo_candidates, feature, "0", mode="phylogenetic")
+    geo_yes = _nearest_supporting_neighbor(language, geo_candidates, feature, "1", mode="geographic")
+    geo_no = _nearest_supporting_neighbor(language, geo_candidates, feature, "0", mode="geographic")
+
+    user_lines.append("Observed typological facts (anchor features):")
+    if anchors:
+        for feat_name, feat_value in anchors:
+            user_lines.append(f"- {feat_name}: {feat_value} (observed)")
+    else:
+        user_lines.append("- (no observed anchor facts)")
 
     if INCLUDE_VOTE_TABLE:
         g = votes["genetic"]
         geo = votes["geographic"]
         ov = votes["overall"]
-        user_lines.append("Target-feature vote counts (primary evidence):")
+        user_lines.append("Target-feature vote counts (useful but not decisive):")
         user_lines.append(
             f"- Genetic vote: {g['yes']} yes / {g['no']} no / {g['missing']} unk ({g['yes_ratio']:.0%} yes)"
         )
@@ -520,10 +687,35 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
             f"- Geo vote: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk ({geo['yes_ratio']:.0%} yes)"
         )
         user_lines.append(
-            f"- Overall: {ov['yes']} yes / {ov['no']} no ({ov['yes_ratio']:.0%} yes; "
-            f"majority={ov['majority']}; agreement={ov['agreement_ratio']:.0%})"
+            f"- Overall observed votes: {ov['yes']} yes / {ov['no']} no "
+            f"({ov['yes_ratio']:.0%} yes; agreement={ov['agreement_ratio']:.0%})"
         )
-        user_lines.append(f"- Feature prevalence prior: value={prior_value} ({prior_ratio:.0%} of observed)")
+        user_lines.append(
+            f"- Vote evidence coverage: {ov['yes'] + ov['no']} observed target-feature votes "
+            f"(unknown ignored in decision)."
+        )
+        user_lines.append(
+            f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
+        )
+
+    user_lines.append("Nearest contrastive neighbor evidence:")
+    user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
+    user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
+    user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
+    user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+
+    user_lines.append("Target-specific correlated clues (compact):")
+    if clues:
+        for idx, clue in enumerate(clues, start=1):
+            user_lines.append(
+                f"{idx}) {clue['feature']}={clue['value']} -> target support {clue['yes']} yes / {clue['no']} no"
+            )
+        user_lines.append(
+            f"- Correlated clues leaning: {clue_summary['yes']} yes / "
+            f"{clue_summary['no']} no / {clue_summary['tie']} tie"
+        )
+    else:
+        user_lines.append("- No reliable correlated clues with enough support.")
 
     allowed = _allowed_values(feature)
     if PROMPT_VERSION == "v3_strict_json":
@@ -532,20 +724,29 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append("Predict the missing value for the following feature:")
         user_lines.append(f"- Feature: {feature}")
         user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
+        user_lines.append("Reasoning guidance:")
+        user_lines.append("- Compare the support for value 0 versus value 1.")
+        user_lines.append("- Weigh observed anchor features, nearest phylogenetic evidence, nearest geographic evidence, and correlated clues together.")
+        user_lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
+        user_lines.append("- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.")
+        user_lines.append("- It is acceptable to predict a minority value if it is better supported by the overall evidence.")
+        user_lines.append(f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value}).")
         user_lines.append("Output format (STRICT JSON):")
         user_lines.append("Output ONLY valid JSON.")
-        user_lines.append("Deterministic decision rule:")
-        user_lines.append("1) Use overall vote majority on target-feature yes/no counts (ignore unknown).")
-        user_lines.append("2) If tied or no overall evidence, use phylogenetic vote majority.")
-        user_lines.append(f"3) If still tied or no evidence, use feature prevalence prior (choose {prior_value}).")
         user_lines.append("Return exactly one minified JSON object on one line with keys: value, confidence, rationale.")
         user_lines.append("- value: one of the allowed values above")
         user_lines.append("- confidence: low, medium, or high")
         user_lines.append("- rationale: at most 20 words")
         user_lines.append("No Markdown, no prose, no code fences, no trailing text.")
-        user_lines.append("Example output:")
+        user_lines.append("Few-shot examples:")
         user_lines.append(
-            '{"value":"0","confidence":"high","rationale":"Closest genetic and geographic neighbors mostly support value 0."}'
+            '{"value":"1","confidence":"medium","rationale":"Most neighbors are 0, but the closest and most similar languages support 1."}'
+        )
+        user_lines.append(
+            '{"value":"1","confidence":"high","rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"low","rationale":"Evidence is balanced, so the weak prevalence prior favors 0."}'
         )
     else:
         user_lines.append("Task:")
@@ -642,7 +843,7 @@ def main() -> None:
     )
     args = p.parse_args()
 
-    global typ_df, metadata_df, genetic_neighbours, geographic_neighbours, top_n_features, topk_map
+    global typ_df, metadata_df, genetic_neighbours, geographic_neighbours, top_n_features, topk_map, clue_support_cache
 
     typ_df = pd.read_csv(args.typ, index_col=0)
     typ_df.index = typ_df.index.astype(str)
@@ -658,6 +859,7 @@ def main() -> None:
     geographic_neighbours = {str(k): v for k, v in geographic_neighbours.items()}
 
     top_n_features = args.top_n
+    clue_support_cache = {}
     tmp: Dict[str, List[Tuple[int, str]]] = {}
     for _, row in topk_df.iterrows():
         feat = str(row["feature"])

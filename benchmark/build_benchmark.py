@@ -35,20 +35,29 @@ def _allowed_values_from_df(df: pd.DataFrame, feature: str) -> List[str]:
 
 
 def _rewrite_output_contract(user_prompt: str) -> str:
-    marker = "Output format (STRICT):"
-    prefix = user_prompt.split(marker)[0].rstrip()
+    prefix = user_prompt.rstrip()
+    for marker in ("Output format (STRICT JSON):", "Output format (STRICT):"):
+        if marker in user_prompt:
+            prefix = user_prompt.split(marker, 1)[0].rstrip()
+            break
     return (
         f"{prefix}\n"
         "Prompt version: v3_strict_json\n"
+        "Reasoning guidance:\n"
+        "- Compare the support for value 0 versus value 1.\n"
+        "- Neighbor counts are useful, but do not follow majority vote blindly.\n"
+        "- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.\n"
+        "- It is acceptable to predict a minority value if it is better supported by the overall evidence.\n"
+        "- Use prevalence only as a weak tie-breaker if the evidence is otherwise balanced.\n"
         "Output format (STRICT JSON):\n"
         "Output ONLY valid JSON.\n"
         "Return exactly one minified JSON object on one line with keys in this exact order:\n"
-        '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 30 words>"}\n'
+        '{"value":"<one allowed value>","confidence":"low|medium|high","rationale":"<max 20 words>"}\n'
         "Use double quotes only. No Markdown, no code fences, no extra text.\n"
         "Few-shot examples:\n"
-        '{"value":"0","confidence":"high","rationale":"Neighbor evidence strongly favors value 0 with consistent signals."}\n'
-        '{"value":"1","confidence":"medium","rationale":"Phylogenetic evidence favors 1 but geographic evidence is mixed."}\n'
-        '{"value":"0","confidence":"low","rationale":"Evidence is sparse and conflicting; defaulting to the more common value."}'
+        '{"value":"1","confidence":"medium","rationale":"Most neighbors are 0, but the closest and most similar languages support 1."}\n'
+        '{"value":"1","confidence":"high","rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1."}\n'
+        '{"value":"0","confidence":"low","rationale":"Evidence is balanced, so the weak prevalence prior favors 0."}'
     )
 
 
