@@ -788,7 +788,6 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
         user_lines.append("- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.")
         user_lines.append("- It is acceptable to predict a minority value if it is better supported by the overall evidence.")
-        user_lines.append("- A distant lone 1 should not outweigh several closer 0s unless anchor features clearly support 1.")
         user_lines.append(f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value}).")
         user_lines.append("Output format (STRICT JSON):")
         user_lines.append("Output ONLY valid JSON.")
@@ -805,7 +804,7 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
             '{"value":"1","confidence":"high","rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1."}'
         )
         user_lines.append(
-            '{"value":"0","confidence":"medium","rationale":"A lone distant 1 is weaker than several closer 0 neighbors."}'
+            '{"value":"0","confidence":"low","rationale":"Evidence is balanced, so the weak prevalence prior favors 0."}'
         )
     else:
         user_lines.append("Task:")
