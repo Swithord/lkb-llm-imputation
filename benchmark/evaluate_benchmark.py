@@ -100,9 +100,42 @@ def _safe_div(a: float, b: float) -> float:
 
 def _init_groups() -> Dict[str, Dict[str, int]]:
     return {
-        "overall": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
-        "high": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
-        "low": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
+        "overall": {
+            "n": 0,
+            "correct": 0,
+            "parsed": 0,
+            "high_conf_n": 0,
+            "high_conf_correct": 0,
+            "rationale_ok": 0,
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+        },
+        "high": {
+            "n": 0,
+            "correct": 0,
+            "parsed": 0,
+            "high_conf_n": 0,
+            "high_conf_correct": 0,
+            "rationale_ok": 0,
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+        },
+        "low": {
+            "n": 0,
+            "correct": 0,
+            "parsed": 0,
+            "high_conf_n": 0,
+            "high_conf_correct": 0,
+            "rationale_ok": 0,
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+        },
     }
 
 
@@ -137,6 +170,19 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
                 groups[key]["correct"] += 1
             if rationale_ok:
                 groups[key]["rationale_ok"] += 1
+
+        if parsed and gval in {"0", "1"} and pval in {"0", "1"}:
+            yi = int(gval)
+            pi = int(pval)
+            for key in ("overall", group):
+                if yi == 1 and pi == 1:
+                    groups[key]["tp"] += 1
+                elif yi == 0 and pi == 1:
+                    groups[key]["fp"] += 1
+                elif yi == 0 and pi == 0:
+                    groups[key]["tn"] += 1
+                else:
+                    groups[key]["fn"] += 1
 
         if pconf in conf_score and parsed:
             c = conf_score[pconf]
@@ -173,8 +219,14 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
     }
 
     for k, v in groups.items():
+        precision = _safe_div(v["tp"], v["tp"] + v["fp"])
+        recall = _safe_div(v["tp"], v["tp"] + v["fn"])
+        f1 = _safe_div(2.0 * precision * recall, precision + recall)
         report["metrics"][k] = {
             "accuracy": _safe_div(v["correct"], v["n"]),
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
             "parsed_rate": _safe_div(v["parsed"], v["n"]),
             "high_conf_accuracy": _safe_div(v["high_conf_correct"], v["high_conf_n"]),
             "high_conf_coverage": _safe_div(v["high_conf_n"], v["n"]),

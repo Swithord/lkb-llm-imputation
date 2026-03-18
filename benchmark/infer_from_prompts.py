@@ -187,35 +187,6 @@ def _extract_json_fields(text: str) -> Tuple[str | None, str | None, str | None]
     )
 
 
-def _slice_to_first_json_object(text: str) -> str:
-    s = text.strip()
-    start = s.find("{")
-    if start < 0:
-        return s
-    depth = 0
-    in_string = False
-    escaped = False
-    for i in range(start, len(s)):
-        ch = s[i]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return s[start : i + 1]
-    return s
-
-
 def _decode_tokens(tokenizer, token_ids: list[int]) -> str:
     tokens = tokenizer.convert_ids_to_tokens(token_ids, skip_special_tokens=True)
     return tokenizer.convert_tokens_to_string(tokens).strip()
@@ -422,9 +393,8 @@ def main() -> None:
         for i, rec in enumerate(chunk):
             gen_ids = generated[i, int(input_lens[i]) :]
             raw_output = _decode_tokens(tokenizer, gen_ids.detach().cpu().tolist())
-            json_view = _slice_to_first_json_object(raw_output)
-            value, confidence, rationale = _extract_json_fields(json_view)
-            normalized_value = _normalize_value(value, json_view, rec.get("allowed_values", []))
+            value, confidence, rationale = _extract_json_fields(raw_output)
+            normalized_value = _normalize_value(value, raw_output, rec.get("allowed_values", []))
             normalized_confidence = _normalize_confidence(confidence)
             normalized_rationale = _normalize_rationale(rationale)
             outputs.append(

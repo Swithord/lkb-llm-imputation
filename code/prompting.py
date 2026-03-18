@@ -350,6 +350,40 @@ def _collect_neighbor_facts(
     return facts
 
 
+def _format_neighbor_block(
+    language: str,
+    neighbors: Sequence[str],
+    candidates: Sequence[str],
+    target_feature: str,
+    correlated: Sequence[str],
+    mode: str,
+) -> List[str]:
+    lines: List[str] = []
+    candidate_rank = {str(nb): idx for idx, nb in enumerate(candidates, start=1)}
+    lat0, lon0 = _meta_lat_lon(language)
+
+    for idx, nb in enumerate(neighbors, start=1):
+        label = _language_label(nb)
+        if mode == "geographic" and lat0 is not None and lon0 is not None:
+            lat1, lon1 = _meta_lat_lon(nb)
+            if lat1 is not None and lon1 is not None:
+                header = f"{idx}) {label} (glottocode={nb}, km={_haversine_km(lat0, lon0, lat1, lon1):.1f}):"
+            else:
+                header = f"{idx}) {label} (glottocode={nb}, rank={candidate_rank.get(str(nb), '?')}):"
+        else:
+            header = f"{idx}) {label} (glottocode={nb}, rank={candidate_rank.get(str(nb), '?')}):"
+        lines.append(header)
+
+        facts = _collect_neighbor_facts(nb, target_feature, correlated, limit=4, max_correlated_fallback=3)
+        if facts:
+            for feat, value in facts:
+                lines.append(f"- {feat}: {value}")
+        else:
+            lines.append("- No observed target or anchor facts available.")
+
+    return lines
+
+
 def _prioritize_neighbors_with_target_value(neighbors: Sequence[str], target_feature: str) -> List[str]:
     indexed = list(enumerate(neighbors))
     indexed.sort(
@@ -674,6 +708,30 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
             user_lines.append(f"- {feat_name}: {feat_value} (observed)")
     else:
         user_lines.append("- (no observed anchor facts)")
+
+    user_lines.append("Selected phylogenetic neighbors (detailed evidence):")
+    user_lines.extend(
+        _format_neighbor_block(
+            language,
+            phylo_neighbors,
+            phylo_candidates,
+            feature,
+            correlated,
+            mode="phylogenetic",
+        )
+    )
+
+    user_lines.append("Selected geographic neighbors (detailed evidence):")
+    user_lines.extend(
+        _format_neighbor_block(
+            language,
+            geo_neighbors,
+            geo_candidates,
+            feature,
+            correlated,
+            mode="geographic",
+        )
+    )
 
     if INCLUDE_VOTE_TABLE:
         g = votes["genetic"]
