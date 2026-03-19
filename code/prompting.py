@@ -384,6 +384,19 @@ def _format_neighbor_block(
     return lines
 
 
+def _supporting_neighbor_names(
+    neighbors: Sequence[str], feature: str, desired_value: str, max_items: int = 2
+) -> List[str]:
+    names: List[str] = []
+    for nb in neighbors:
+        if _target_feature_value(nb, feature) != desired_value:
+            continue
+        names.append(_language_label(nb))
+        if len(names) >= max_items:
+            break
+    return names
+
+
 def _prioritize_neighbors_with_target_value(neighbors: Sequence[str], target_feature: str) -> List[str]:
     indexed = list(enumerate(neighbors))
     indexed.sort(
@@ -709,74 +722,74 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     else:
         user_lines.append("- (no observed anchor facts)")
 
-    user_lines.append("Selected phylogenetic neighbors (detailed evidence):")
-    user_lines.extend(
-        _format_neighbor_block(
-            language,
-            phylo_neighbors,
-            phylo_candidates,
-            feature,
-            correlated,
-            mode="phylogenetic",
-        )
-    )
-
-    user_lines.append("Selected geographic neighbors (detailed evidence):")
-    user_lines.extend(
-        _format_neighbor_block(
-            language,
-            geo_neighbors,
-            geo_candidates,
-            feature,
-            correlated,
-            mode="geographic",
-        )
-    )
-
-    if INCLUDE_VOTE_TABLE:
-        g = votes["genetic"]
-        geo = votes["geographic"]
-        ov = votes["overall"]
-        user_lines.append("Target-feature vote counts (useful but not decisive):")
-        user_lines.append(
-            f"- Genetic vote: {g['yes']} yes / {g['no']} no / {g['missing']} unk ({g['yes_ratio']:.0%} yes)"
-        )
-        user_lines.append(
-            f"- Geo vote: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk ({geo['yes_ratio']:.0%} yes)"
-        )
-        user_lines.append(
-            f"- Overall observed votes: {ov['yes']} yes / {ov['no']} no "
-            f"({ov['yes_ratio']:.0%} yes; agreement={ov['agreement_ratio']:.0%})"
-        )
-        user_lines.append(
-            f"- Vote evidence coverage: {ov['yes'] + ov['no']} observed target-feature votes "
-            f"(unknown ignored in decision)."
-        )
-        user_lines.append(
-            f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
-        )
-
-    user_lines.append("Nearest contrastive neighbor evidence:")
-    user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
-    user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
-    user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
-    user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
-
-    user_lines.append("Target-specific correlated clues (compact):")
-    if clues:
-        for idx, clue in enumerate(clues, start=1):
-            user_lines.append(
-                f"{idx}) {clue['feature']}={clue['value']} -> target support {clue['yes']} yes / {clue['no']} no"
-            )
-        user_lines.append(
-            f"- Correlated clues leaning: {clue_summary['yes']} yes / "
-            f"{clue_summary['no']} no / {clue_summary['tie']} tie"
-        )
-    else:
-        user_lines.append("- No reliable correlated clues with enough support.")
-
     allowed = _allowed_values(feature)
     if PROMPT_VERSION == "v3_strict_json":
+        user_lines.append("Selected phylogenetic neighbors (detailed evidence):")
+        user_lines.extend(
+            _format_neighbor_block(
+                language,
+                phylo_neighbors,
+                phylo_candidates,
+                feature,
+                correlated,
+                mode="phylogenetic",
+            )
+        )
+
+        user_lines.append("Selected geographic neighbors (detailed evidence):")
+        user_lines.extend(
+            _format_neighbor_block(
+                language,
+                geo_neighbors,
+                geo_candidates,
+                feature,
+                correlated,
+                mode="geographic",
+            )
+        )
+
+        if INCLUDE_VOTE_TABLE:
+            g = votes["genetic"]
+            geo = votes["geographic"]
+            ov = votes["overall"]
+            user_lines.append("Target-feature vote counts (useful but not decisive):")
+            user_lines.append(
+                f"- Genetic vote: {g['yes']} yes / {g['no']} no / {g['missing']} unk ({g['yes_ratio']:.0%} yes)"
+            )
+            user_lines.append(
+                f"- Geo vote: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk ({geo['yes_ratio']:.0%} yes)"
+            )
+            user_lines.append(
+                f"- Overall observed votes: {ov['yes']} yes / {ov['no']} no "
+                f"({ov['yes_ratio']:.0%} yes; agreement={ov['agreement_ratio']:.0%})"
+            )
+            user_lines.append(
+                f"- Vote evidence coverage: {ov['yes'] + ov['no']} observed target-feature votes "
+                f"(unknown ignored in decision)."
+            )
+            user_lines.append(
+                f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
+            )
+
+        user_lines.append("Nearest contrastive neighbor evidence:")
+        user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
+        user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+
+        user_lines.append("Target-specific correlated clues (compact):")
+        if clues:
+            for idx, clue in enumerate(clues, start=1):
+                user_lines.append(
+                    f"{idx}) {clue['feature']}={clue['value']} -> target support {clue['yes']} yes / {clue['no']} no"
+                )
+            user_lines.append(
+                f"- Correlated clues leaning: {clue_summary['yes']} yes / "
+                f"{clue_summary['no']} no / {clue_summary['tie']} tie"
+            )
+        else:
+            user_lines.append("- No reliable correlated clues with enough support.")
+
         user_lines.append("Prompt version: v3_strict_json")
         user_lines.append("Task:")
         user_lines.append("Predict the missing value for the following feature:")
@@ -805,6 +818,75 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         )
         user_lines.append(
             '{"value":"0","confidence":"low","rationale":"Evidence is balanced, so the weak prevalence prior favors 0."}'
+        )
+    elif PROMPT_VERSION == "v4_contrast_json":
+        yes_phylo_names = _supporting_neighbor_names(phylo_neighbors, feature, "1", max_items=2)
+        yes_geo_names = _supporting_neighbor_names(geo_neighbors, feature, "1", max_items=2)
+        no_phylo_names = _supporting_neighbor_names(phylo_neighbors, feature, "0", max_items=2)
+        no_geo_names = _supporting_neighbor_names(geo_neighbors, feature, "0", max_items=2)
+        yes_clues = [c for c in clues if c.get("majority") == "yes"][:2]
+        no_clues = [c for c in clues if c.get("majority") == "no"][:2]
+
+        user_lines.append("Prompt version: v4_contrast_json")
+        user_lines.append("Task:")
+        user_lines.append("Predict the missing value for the following feature:")
+        user_lines.append(f"- Feature: {feature}")
+        user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
+        user_lines.append("Competing evidence for value 1:")
+        user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
+        user_lines.append(f"- Selected phylogenetic/geographic 1-neighbors: {', '.join(yes_phylo_names + yes_geo_names) if (yes_phylo_names or yes_geo_names) else 'none in selected evidence'}")
+        if yes_clues:
+            for clue in yes_clues:
+                user_lines.append(
+                    f"- Clue for 1: {clue['feature']}={clue['value']} -> {clue['yes']} yes / {clue['no']} no"
+                )
+        else:
+            user_lines.append("- Clue for 1: no strong correlated clue leaning toward 1")
+
+        user_lines.append("Competing evidence for value 0:")
+        user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+        user_lines.append(f"- Selected phylogenetic/geographic 0-neighbors: {', '.join(no_phylo_names + no_geo_names) if (no_phylo_names or no_geo_names) else 'none in selected evidence'}")
+        if no_clues:
+            for clue in no_clues:
+                user_lines.append(
+                    f"- Clue for 0: {clue['feature']}={clue['value']} -> {clue['yes']} yes / {clue['no']} no"
+                )
+        else:
+            user_lines.append("- Clue for 0: no strong correlated clue leaning toward 0")
+
+        if INCLUDE_VOTE_TABLE:
+            g = votes["genetic"]
+            geo = votes["geographic"]
+            ov = votes["overall"]
+            user_lines.append("Secondary vote snapshot:")
+            user_lines.append(f"- Genetic votes: {g['yes']} yes / {g['no']} no / {g['missing']} unk")
+            user_lines.append(f"- Geographic votes: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk")
+            user_lines.append(f"- Overall votes: {ov['yes']} yes / {ov['no']} no")
+            user_lines.append(f"- Weak prevalence prior: {prior_value} ({prior_ratio:.0%} of observed)")
+
+        user_lines.append("Reasoning guidance:")
+        user_lines.append("- Compare which side has stronger, closer, and more consistent evidence.")
+        user_lines.append("- Use anchor features and closest neighbors first; use votes only as secondary evidence.")
+        user_lines.append("- A minority value is acceptable if its evidence is clearly stronger.")
+        user_lines.append("- Use prevalence only as a weak tie-breaker when the two sides are otherwise balanced.")
+        user_lines.append("Output format (STRICT JSON):")
+        user_lines.append("Output ONLY valid JSON.")
+        user_lines.append("Return exactly one minified JSON object on one line with keys: value, confidence, rationale.")
+        user_lines.append("- value: one of the allowed values above")
+        user_lines.append("- confidence: low, medium, or high")
+        user_lines.append("- rationale: at most 20 words")
+        user_lines.append("No Markdown, no prose, no code fences, no trailing text.")
+        user_lines.append("Few-shot examples:")
+        user_lines.append(
+            '{"value":"1","confidence":"medium","rationale":"Closer evidence for 1 outweighs the broader support for 0."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"medium","rationale":"Closer evidence for 0 is stronger despite a few 1 neighbors."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"low","rationale":"Both sides are weak, so the prevalence prior favors 0."}'
         )
     else:
         user_lines.append("Task:")
