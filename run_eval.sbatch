@@ -15,6 +15,7 @@ MODE="${MODE:-all}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.2-3B-Instruct}"
 GOLD="${GOLD:-benchmark/gold_eval_2.jsonl}"
 OUT_DIR="${OUT_DIR:-prediction}"
+PROMPT_VERSION="${PROMPT_VERSION:-v4_contrast_json}"
 
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs "$OUT_DIR"
@@ -42,6 +43,13 @@ export TRANSFORMERS_NO_TF=1
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" logs "$OUT_DIR"
 
 run_benchmark() {
+  NO_VOTE_PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_novote.jsonl"
+  VOTE_PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_vote.jsonl"
+  NO_VOTE_PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_novote.jsonl"
+  VOTE_PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_vote.jsonl"
+  NO_VOTE_REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_novote.json"
+  VOTE_REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_vote.json"
+
   python benchmark/build_prompts_from_gold.py \
     --prompting_py code/prompting.py \
     --typ output/uriel+_typological.csv \
@@ -50,9 +58,9 @@ run_benchmark() {
     --gen output/genetic_neighbours.json \
     --geo output/geographic_neighbours.json \
     --gold "$GOLD" \
-    --prompt_version v3_strict_json \
+    --prompt_version "$PROMPT_VERSION" \
     --no-include_vote_table \
-    --out "$OUT_DIR/prompts_eval_v3_strict_json_novote.jsonl"
+    --out "$NO_VOTE_PROMPTS"
 
   python benchmark/build_prompts_from_gold.py \
     --prompting_py code/prompting.py \
@@ -62,13 +70,13 @@ run_benchmark() {
     --gen output/genetic_neighbours.json \
     --geo output/geographic_neighbours.json \
     --gold "$GOLD" \
-    --prompt_version v3_strict_json \
+    --prompt_version "$PROMPT_VERSION" \
     --include_vote_table \
-    --out "$OUT_DIR/prompts_eval_v3_strict_json_vote.jsonl"
+    --out "$VOTE_PROMPTS"
 
   python benchmark/infer_from_prompts.py \
-    --in "$OUT_DIR/prompts_eval_v3_strict_json_novote.jsonl" \
-    --out "$OUT_DIR/predictions_eval_v3_strict_json_novote.jsonl" \
+    --in "$NO_VOTE_PROMPTS" \
+    --out "$NO_VOTE_PREDS" \
     --model "$MODEL" \
     --device cuda \
     --batch_size 4 \
@@ -77,8 +85,8 @@ run_benchmark() {
     --stop_at_closing_brace
 
   python benchmark/infer_from_prompts.py \
-    --in "$OUT_DIR/prompts_eval_v3_strict_json_vote.jsonl" \
-    --out "$OUT_DIR/predictions_eval_v3_strict_json_vote.jsonl" \
+    --in "$VOTE_PROMPTS" \
+    --out "$VOTE_PREDS" \
     --model "$MODEL" \
     --device cuda \
     --batch_size 4 \
@@ -88,13 +96,13 @@ run_benchmark() {
 
   python benchmark/evaluate_benchmark.py \
     --gold "$GOLD" \
-    --pred "$OUT_DIR/predictions_eval_v3_strict_json_novote.jsonl" \
-    --report_out "$OUT_DIR/report_eval_v3_strict_json_novote.json"
+    --pred "$NO_VOTE_PREDS" \
+    --report_out "$NO_VOTE_REPORT"
 
   python benchmark/evaluate_benchmark.py \
     --gold "$GOLD" \
-    --pred "$OUT_DIR/predictions_eval_v3_strict_json_vote.jsonl" \
-    --report_out "$OUT_DIR/report_eval_v3_strict_json_vote.json"
+    --pred "$VOTE_PREDS" \
+    --report_out "$VOTE_REPORT"
 
   if [[ -f benchmark/predictions_eval_2.jsonl ]]; then
     python benchmark/evaluate_benchmark.py \
@@ -104,18 +112,18 @@ run_benchmark() {
 
     python benchmark/compare_prompt_reports.py \
       --baseline_report "$OUT_DIR/report_eval_baseline_from_existing.json" \
-      --v3_no_vote_report "$OUT_DIR/report_eval_v3_strict_json_novote.json" \
-      --v3_vote_report "$OUT_DIR/report_eval_v3_strict_json_vote.json" \
-      --out "$OUT_DIR/report_prompt_v3.json"
+      --v3_no_vote_report "$NO_VOTE_REPORT" \
+      --v3_vote_report "$VOTE_REPORT" \
+      --out "$OUT_DIR/report_prompt_${PROMPT_VERSION}.json"
   fi
 
   python benchmark/measure_stream_a_speed.py \
-    --in "$OUT_DIR/prompts_eval_v3_strict_json_vote.jsonl" \
+    --in "$VOTE_PROMPTS" \
     --model "$MODEL" \
     --device cuda \
     --batch_size 4 \
     --max_new_tokens 64 \
-    --report_out "$OUT_DIR/speed_report.json"
+    --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
 }
 
 run_full() {
@@ -138,12 +146,14 @@ PY
     --gen output/genetic_neighbours.json \
     --geo output/geographic_neighbours.json \
     --groups_json "$OUT_DIR/language_groups_all.json" \
+    --prompt_version "$PROMPT_VERSION" \
+    --include_vote_table \
     --model "$MODEL" \
     --device cuda \
     --batch_size 4 \
     --max_new_tokens 64 \
-    --prompts_out "$OUT_DIR/eval_missing_prompts_all.jsonl" \
-    --pred_out "$OUT_DIR/eval_missing_predictions_all.jsonl"
+    --prompts_out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl" \
+    --pred_out "$OUT_DIR/eval_missing_predictions_all_${PROMPT_VERSION}.jsonl"
 }
 
 case "$MODE" in

@@ -263,6 +263,13 @@ def main() -> None:
     p.add_argument("--low_n", type=int, default=50)
     p.add_argument("--min_observed_low", type=int, default=5)
     p.add_argument("--top_n", type=int, default=10)
+    p.add_argument("--prompt_version", type=str, default="v3_strict_json")
+    p.add_argument(
+        "--include_vote_table",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include compact vote summary table in prompt context.",
+    )
     p.add_argument("--model", type=str, default="meta-llama/Llama-3.2-3B-Instruct")
     p.add_argument("--batch_size", type=int, default=4)
     p.add_argument("--max_new_tokens", type=int, default=96)
@@ -303,6 +310,7 @@ def main() -> None:
     prompting.geographic_neighbours = geographic
     prompting.top_n_features = args.top_n
     prompting.topk_map = topk_map
+    prompting.set_prompt_options(args.prompt_version, args.include_vote_table)
 
     records: List[dict] = []
     for i, (group, lang, feat) in enumerate(_iter_missing_pairs(typ_df, groups)):
