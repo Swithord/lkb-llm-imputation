@@ -15,7 +15,7 @@ MODE="${MODE:-all}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.2-3B-Instruct}"
 GOLD="${GOLD:-benchmark/gold_eval_2.jsonl}"
 OUT_DIR="${OUT_DIR:-prediction}"
-PROMPT_VERSION="${PROMPT_VERSION:-v4_contrast_json}"
+PROMPT_VERSION="${PROMPT_VERSION:-v3_strict_json}"
 
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs "$OUT_DIR"
@@ -114,6 +114,7 @@ run_benchmark() {
       --baseline_report "$OUT_DIR/report_eval_baseline_from_existing.json" \
       --v3_no_vote_report "$NO_VOTE_REPORT" \
       --v3_vote_report "$VOTE_REPORT" \
+      --prompt_version "$PROMPT_VERSION" \
       --out "$OUT_DIR/report_prompt_${PROMPT_VERSION}.json"
   fi
 

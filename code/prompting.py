@@ -256,12 +256,29 @@ def _nearest_candidate_with_value(
     return None
 
 
+def _shared_feature_value_count(reference_language: str, candidate_language: str, features: Sequence[str]) -> int:
+    if typ_df is None or reference_language not in typ_df.index or candidate_language not in typ_df.index:
+        return 0
+    score = 0
+    for feat in features:
+        if feat not in typ_df.columns:
+            continue
+        ref_val = typ_df.at[reference_language, feat]
+        cand_val = typ_df.at[candidate_language, feat]
+        if _is_missing(ref_val) or _is_missing(cand_val):
+            continue
+        if _format_value(ref_val) == _format_value(cand_val):
+            score += 1
+    return score
+
+
 def _select_neighbors_with_feature_coverage(
     candidates: Sequence[str],
     correlated: Sequence[str],
     target_feature: str,
     k: int,
     force_include: Sequence[str] | None = None,
+    reference_language: str | None = None,
 ) -> List[str]:
     if k <= 0:
         return []
@@ -269,6 +286,17 @@ def _select_neighbors_with_feature_coverage(
     feature_targets = [f for f in correlated if typ_df is not None and f in typ_df.columns]
     if typ_df is not None and target_feature in typ_df.columns and target_feature not in feature_targets:
         feature_targets.append(target_feature)
+    ordered_candidates = [str(nb) for nb in candidates]
+    if reference_language is not None:
+        indexed = list(enumerate(ordered_candidates))
+        indexed.sort(
+            key=lambda x: (
+                0 if _lang_has_feature_value(str(x[1]), target_feature) else 1,
+                -_shared_feature_value_count(reference_language, str(x[1]), feature_targets),
+                x[0],
+            )
+        )
+        ordered_candidates = [str(nb) for _, nb in indexed]
     selected: List[str] = []
     selected_set: set[str] = set()
     covered: set[str] = set()
@@ -276,7 +304,7 @@ def _select_neighbors_with_feature_coverage(
     if force_include:
         for nb in force_include:
             nb = str(nb)
-            if nb in selected_set or nb not in candidates:
+            if nb in selected_set or nb not in ordered_candidates:
                 continue
             selected.append(nb)
             selected_set.add(nb)
@@ -284,7 +312,7 @@ def _select_neighbors_with_feature_coverage(
             if len(selected) >= k:
                 return selected[:k]
 
-    for nb in candidates:
+    for nb in ordered_candidates:
         if nb in selected_set:
             continue
         obs = _observed_correlated_set(nb, feature_targets)
@@ -298,7 +326,7 @@ def _select_neighbors_with_feature_coverage(
                 return selected[:k]
 
     if len(selected) < k:
-        for nb in candidates:
+        for nb in ordered_candidates:
             if nb in selected_set:
                 continue
             if _observed_correlated_set(nb, feature_targets):
@@ -308,7 +336,7 @@ def _select_neighbors_with_feature_coverage(
                     return selected[:k]
 
     if len(selected) < k:
-        for nb in candidates:
+        for nb in ordered_candidates:
             if nb in selected_set:
                 continue
             selected.append(nb)
@@ -502,7 +530,7 @@ def compute_neighbor_votes(
         phylo_yes = _nearest_candidate_with_value(phylo_candidates, feature, "1")
         phylo_force = [phylo_yes] if phylo_yes is not None else []
         phylo_neighbors = _select_neighbors_with_feature_coverage(
-            phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force
+            phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force, reference_language=language
         )
     if geo_neighbors is None:
         geo_k = _neighbor_k_for_language(geographic_neighbours, language)
@@ -511,7 +539,7 @@ def compute_neighbor_votes(
         geo_yes = _nearest_candidate_with_value(geo_candidates, feature, "1")
         geo_force = [geo_yes] if geo_yes is not None else []
         geo_neighbors = _select_neighbors_with_feature_coverage(
-            geo_candidates, correlated, feature, geo_k, force_include=geo_force
+            geo_candidates, correlated, feature, geo_k, force_include=geo_force, reference_language=language
         )
 
     phylo_counts = _count_votes(phylo_neighbors, feature)
@@ -696,18 +724,18 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     phylo_yes_nb = _nearest_candidate_with_value(phylo_candidates, feature, "1")
     phylo_force = [phylo_yes_nb] if phylo_yes_nb is not None else []
     phylo_neighbors = _select_neighbors_with_feature_coverage(
-        phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force
+        phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force, reference_language=language
     )
     geo_k = _neighbor_k_for_language(geographic_neighbours, language)
     geo_candidates = _ranked_geo_candidates(language)
     geo_yes_nb = _nearest_candidate_with_value(geo_candidates, feature, "1")
     geo_force = [geo_yes_nb] if geo_yes_nb is not None else []
     geo_neighbors = _select_neighbors_with_feature_coverage(
-        geo_candidates, correlated, feature, geo_k, force_include=geo_force
+        geo_candidates, correlated, feature, geo_k, force_include=geo_force, reference_language=language
     )
 
     votes = compute_neighbor_votes(language, feature, phylo_neighbors=phylo_neighbors, geo_neighbors=geo_neighbors)
-    clues, clue_summary = _collect_target_correlated_clues(language, feature, top_m=3, min_support=12)
+    clues, clue_summary = _collect_target_correlated_clues(language, feature, top_m=2, min_support=12)
     prior_value, prior_ratio = _feature_prevalence_prior(feature)
     anchors = _observed_anchor_facts(language, feature, max_items=5)
     phylo_yes = _nearest_supporting_neighbor(language, phylo_candidates, feature, "1", mode="phylogenetic")
