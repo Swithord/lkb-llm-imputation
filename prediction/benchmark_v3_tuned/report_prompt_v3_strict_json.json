@@ -1,0 +1,78 @@
+{
+  "prompt_version": "v3_strict_json",
+  "metrics": {
+    "baseline": {
+      "raw_parse_rate": 0.5994417306350314,
+      "raw_accuracy": 0.4605722260990928,
+      "normalized_accuracy": 0.7773900907187719
+    },
+    "no_vote_table": {
+      "raw_parse_rate": 0.9993021632937893,
+      "raw_accuracy": 0.7718073970690859,
+      "normalized_accuracy": 0.7718073970690859
+    },
+    "with_vote_table": {
+      "raw_parse_rate": 0.9979064898813678,
+      "raw_accuracy": 0.7780879274249826,
+      "normalized_accuracy": 0.7794836008374041
+    }
+  },
+  "raw_parse_compliance_improvement": {
+    "no_vote_vs_baseline": {
+      "absolute": 0.3998604326587579,
+      "relative": 0.6670547147846334
+    },
+    "with_vote_vs_baseline": {
+      "absolute": 0.3984647592463364,
+      "relative": 0.6647264260768336
+    },
+    "with_vote_vs_no_vote": {
+      "absolute": -0.0013956734124215275,
+      "relative": -0.0013966480446927715
+    }
+  },
+  "comparison_vs_baseline": {
+    "no_vote": {
+      "raw_parse_rate": {
+        "absolute": 0.3998604326587579,
+        "relative": 0.6670547147846334
+      },
+      "raw_accuracy": {
+        "absolute": 0.31123517096999304,
+        "relative": 0.6757575757575758
+      },
+      "normalized_accuracy": {
+        "absolute": -0.005582693649685999,
+        "relative": -0.007181328545781002
+      }
+    },
+    "with_vote": {
+      "raw_parse_rate": {
+        "absolute": 0.3984647592463364,
+        "relative": 0.6647264260768336
+      },
+      "raw_accuracy": {
+        "absolute": 0.31751570132588974,
+        "relative": 0.6893939393939393
+      },
+      "normalized_accuracy": {
+        "absolute": 0.002093510118632236,
+        "relative": 0.002692998204667858
+      }
+    }
+  },
+  "ablation_vote_table_vs_no_vote_table": {
+    "raw_parse_rate": {
+      "absolute": -0.0013956734124215275,
+      "relative": -0.0013966480446927715
+    },
+    "raw_accuracy": {
+      "absolute": 0.006280530355896707,
+      "relative": 0.008137432188065083
+    },
+    "normalized_accuracy": {
+      "absolute": 0.007676203768318235,
+      "relative": 0.009945750452079594
+    }
+  }
+}
