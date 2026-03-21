@@ -33,6 +33,12 @@ INCLUDE_VOTE_TABLE: bool = True
 clue_support_cache: Dict[Tuple[str, str, str], Tuple[int, int]] = {}
 
 
+def _selection_variant() -> str:
+    if PROMPT_VERSION == "v4_strict_json":
+        return "v4"
+    return "v3"
+
+
 def _is_missing(v) -> bool:
     if v is None:
         return True
@@ -279,6 +285,7 @@ def _select_neighbors_with_feature_coverage(
     k: int,
     force_include: Sequence[str] | None = None,
     reference_language: str | None = None,
+    selection_variant: str = "v3",
 ) -> List[str]:
     if k <= 0:
         return []
@@ -312,18 +319,48 @@ def _select_neighbors_with_feature_coverage(
             if len(selected) >= k:
                 return selected[:k]
 
-    for nb in ordered_candidates:
-        if nb in selected_set:
-            continue
-        obs = _observed_correlated_set(nb, feature_targets)
-        if not obs:
-            continue
-        if obs - covered:
-            selected.append(nb)
-            selected_set.add(nb)
-            covered.update(obs)
-            if len(selected) >= k and (not feature_targets or covered.issuperset(feature_targets)):
-                return selected[:k]
+    while len(selected) < k:
+        best_nb: str | None = None
+        best_obs: set[str] | None = None
+        best_key: tuple | None = None
+        for original_rank, nb in enumerate(ordered_candidates):
+            if nb in selected_set:
+                continue
+            obs = _observed_correlated_set(nb, feature_targets)
+            if not obs:
+                continue
+            new_obs = obs - covered
+            if not new_obs:
+                continue
+            if selection_variant == "v4":
+                key = (
+                    len(new_obs),
+                    1 if _lang_has_feature_value(nb, target_feature) else 0,
+                    _shared_feature_value_count(reference_language, nb, feature_targets)
+                    if reference_language is not None
+                    else 0,
+                    -original_rank,
+                )
+            else:
+                key = (
+                    1 if _lang_has_feature_value(nb, target_feature) else 0,
+                    _shared_feature_value_count(reference_language, nb, feature_targets)
+                    if reference_language is not None
+                    else 0,
+                    -original_rank,
+                )
+            if best_key is None or key > best_key:
+                best_nb = nb
+                best_obs = obs
+                best_key = key
+
+        if best_nb is None:
+            break
+        selected.append(best_nb)
+        selected_set.add(best_nb)
+        covered.update(best_obs or set())
+        if len(selected) >= k and (not feature_targets or covered.issuperset(feature_targets)):
+            return selected[:k]
 
     if len(selected) < k:
         for nb in ordered_candidates:
@@ -530,7 +567,13 @@ def compute_neighbor_votes(
         phylo_yes = _nearest_candidate_with_value(phylo_candidates, feature, "1")
         phylo_force = [phylo_yes] if phylo_yes is not None else []
         phylo_neighbors = _select_neighbors_with_feature_coverage(
-            phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force, reference_language=language
+            phylo_candidates,
+            correlated,
+            feature,
+            phylo_k,
+            force_include=phylo_force,
+            reference_language=language,
+            selection_variant=_selection_variant(),
         )
     if geo_neighbors is None:
         geo_k = _neighbor_k_for_language(geographic_neighbours, language)
@@ -539,7 +582,13 @@ def compute_neighbor_votes(
         geo_yes = _nearest_candidate_with_value(geo_candidates, feature, "1")
         geo_force = [geo_yes] if geo_yes is not None else []
         geo_neighbors = _select_neighbors_with_feature_coverage(
-            geo_candidates, correlated, feature, geo_k, force_include=geo_force, reference_language=language
+            geo_candidates,
+            correlated,
+            feature,
+            geo_k,
+            force_include=geo_force,
+            reference_language=language,
+            selection_variant=_selection_variant(),
         )
 
     phylo_counts = _count_votes(phylo_neighbors, feature)
@@ -724,14 +773,26 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     phylo_yes_nb = _nearest_candidate_with_value(phylo_candidates, feature, "1")
     phylo_force = [phylo_yes_nb] if phylo_yes_nb is not None else []
     phylo_neighbors = _select_neighbors_with_feature_coverage(
-        phylo_candidates, correlated, feature, phylo_k, force_include=phylo_force, reference_language=language
+        phylo_candidates,
+        correlated,
+        feature,
+        phylo_k,
+        force_include=phylo_force,
+        reference_language=language,
+        selection_variant=_selection_variant(),
     )
     geo_k = _neighbor_k_for_language(geographic_neighbours, language)
     geo_candidates = _ranked_geo_candidates(language)
     geo_yes_nb = _nearest_candidate_with_value(geo_candidates, feature, "1")
     geo_force = [geo_yes_nb] if geo_yes_nb is not None else []
     geo_neighbors = _select_neighbors_with_feature_coverage(
-        geo_candidates, correlated, feature, geo_k, force_include=geo_force, reference_language=language
+        geo_candidates,
+        correlated,
+        feature,
+        geo_k,
+        force_include=geo_force,
+        reference_language=language,
+        selection_variant=_selection_variant(),
     )
 
     votes = compute_neighbor_votes(language, feature, phylo_neighbors=phylo_neighbors, geo_neighbors=geo_neighbors)
@@ -751,7 +812,7 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append("- (no observed anchor facts)")
 
     allowed = _allowed_values(feature)
-    if PROMPT_VERSION == "v3_strict_json":
+    if PROMPT_VERSION in {"v3_strict_json", "v4_strict_json"}:
         user_lines.append("Selected phylogenetic neighbors (detailed evidence):")
         user_lines.extend(
             _format_neighbor_block(
@@ -818,7 +879,7 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         else:
             user_lines.append("- No reliable correlated clues with enough support.")
 
-        user_lines.append("Prompt version: v3_strict_json")
+        user_lines.append(f"Prompt version: {PROMPT_VERSION}")
         user_lines.append("Task:")
         user_lines.append("Predict the missing value for the following feature:")
         user_lines.append(f"- Feature: {feature}")
