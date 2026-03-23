@@ -13,6 +13,7 @@ set -euo pipefail
 
 MODE="${MODE:-all}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.2-3B-Instruct}"
+BATCH_SIZE="${BATCH_SIZE:-4}"
 GOLD="${GOLD:-benchmark/gold_eval_2.jsonl}"
 OUT_DIR="${OUT_DIR:-prediction}"
 PROMPT_VERSION="${PROMPT_VERSION:-v3_strict_json}"
@@ -79,7 +80,7 @@ run_benchmark() {
     --out "$NO_VOTE_PREDS" \
     --model "$MODEL" \
     --device cuda \
-    --batch_size 4 \
+    --batch_size "$BATCH_SIZE" \
     --max_new_tokens 64 \
     --no-strengthen_json_contract \
     --stop_at_closing_brace
@@ -89,7 +90,7 @@ run_benchmark() {
     --out "$VOTE_PREDS" \
     --model "$MODEL" \
     --device cuda \
-    --batch_size 4 \
+    --batch_size "$BATCH_SIZE" \
     --max_new_tokens 64 \
     --no-strengthen_json_contract \
     --stop_at_closing_brace
@@ -122,7 +123,7 @@ run_benchmark() {
     --in "$VOTE_PROMPTS" \
     --model "$MODEL" \
     --device cuda \
-    --batch_size 4 \
+    --batch_size "$BATCH_SIZE" \
     --max_new_tokens 64 \
     --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
 }
@@ -151,7 +152,7 @@ PY
     --include_vote_table \
     --model "$MODEL" \
     --device cuda \
-    --batch_size 4 \
+    --batch_size "$BATCH_SIZE" \
     --max_new_tokens 64 \
     --prompts_out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl" \
     --pred_out "$OUT_DIR/eval_missing_predictions_all_${PROMPT_VERSION}.jsonl"
