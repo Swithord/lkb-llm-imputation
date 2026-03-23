@@ -31,7 +31,6 @@ topk_map: Dict[str, List[str]]
 PROMPT_VERSION: str = "v3_strict_json"
 INCLUDE_VOTE_TABLE: bool = True
 clue_support_cache: Dict[Tuple[str, str, str], Tuple[int, int]] = {}
-V4_MAX_NEW_COVERAGE_CREDIT: int = 2
 
 
 def _selection_variant() -> str:
@@ -335,8 +334,11 @@ def _select_neighbors_with_feature_coverage(
                 continue
             if selection_variant == "v4":
                 key = (
-                    min(len(new_obs), V4_MAX_NEW_COVERAGE_CREDIT),
+                    len(new_obs),
                     1 if _lang_has_feature_value(nb, target_feature) else 0,
+                    _shared_feature_value_count(reference_language, nb, tuple(sorted(new_obs)))
+                    if reference_language is not None
+                    else 0,
                     _shared_feature_value_count(reference_language, nb, feature_targets)
                     if reference_language is not None
                     else 0,
