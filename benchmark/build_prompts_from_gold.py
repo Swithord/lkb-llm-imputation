@@ -38,15 +38,19 @@ def _build_topk_map(topk_df: pd.DataFrame) -> Dict[str, list[str]]:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Build prompt JSONL for an existing gold id set.")
-    p.add_argument("--prompting_py", type=str, default="code/prompting.py")
+    p.add_argument("--prompting_py", type=str, default="glottolog-tree/prompting.py")
     p.add_argument("--typ", type=str, default="output/uriel+_typological.csv")
     p.add_argument("--meta", type=str, default="output/metadata.csv")
     p.add_argument("--topk_csv", type=str, default="out_corr/topk_per_feature.csv")
     p.add_argument("--gen", type=str, default="output/genetic_neighbours.json")
+    p.add_argument("--gen_detail", type=str, default="output/genetic_neighbours_detailed.json")
     p.add_argument("--geo", type=str, default="output/geographic_neighbours.json")
+    p.add_argument("--retrieval_backend", type=str, default="legacy")
+    p.add_argument("--kg_nodes", type=str, default=None)
+    p.add_argument("--kg_edges", type=str, default=None)
     p.add_argument("--gold", type=str, default="benchmark/gold_eval_2.jsonl")
     p.add_argument("--top_n", type=int, default=10)
-    p.add_argument("--prompt_version", type=str, default="v3_strict_json")
+    p.add_argument("--prompt_version", type=str, default="v5_glottolog_tree_json")
     p.add_argument(
         "--include_vote_table",
         action=argparse.BooleanOptionalAction,
@@ -64,6 +68,12 @@ def main() -> None:
 
     with open(args.gen, "r", encoding="utf-8") as f:
         genetic = {str(k): v for k, v in json.load(f).items()}
+    gen_detail_path = Path(args.gen_detail)
+    if gen_detail_path.exists():
+        with gen_detail_path.open("r", encoding="utf-8") as f:
+            genetic_detail = {str(k): v for k, v in json.load(f).items()}
+    else:
+        genetic_detail = {}
     with open(args.geo, "r", encoding="utf-8") as f:
         geographic = {str(k): v for k, v in json.load(f).items()}
 
@@ -71,10 +81,14 @@ def main() -> None:
     prompting.typ_df = typ_df.copy()
     prompting.metadata_df = meta_df
     prompting.genetic_neighbours = genetic
+    if hasattr(prompting, "genetic_neighbour_details"):
+        prompting.genetic_neighbour_details = genetic_detail
     prompting.geographic_neighbours = geographic
     prompting.top_n_features = args.top_n
     prompting.topk_map = _build_topk_map(topk_df)
     prompting.set_prompt_options(args.prompt_version, args.include_vote_table)
+    if hasattr(prompting, "set_retrieval_options"):
+        prompting.set_retrieval_options(args.retrieval_backend, args.kg_nodes, args.kg_edges)
 
     rows = _read_jsonl(args.gold)
     out_path = Path(args.out)

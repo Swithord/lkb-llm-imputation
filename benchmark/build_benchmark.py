@@ -42,7 +42,6 @@ def _rewrite_output_contract(user_prompt: str) -> str:
             break
     return (
         f"{prefix}\n"
-        "Prompt version: v3_strict_json\n"
         "Reasoning guidance:\n"
         "- Compare the support for value 0 versus value 1.\n"
         "- Neighbor counts are useful, but do not follow majority vote blindly.\n"
@@ -120,18 +119,29 @@ def _pick_mask_pairs(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Build high/low resource benchmark prompts and gold labels.")
-    p.add_argument("--prompting_py", type=str, default="code/prompting.py")
+    p.add_argument("--prompting_py", type=str, default="glottolog-tree/prompting.py")
     p.add_argument("--typ", type=str, default="output/uriel+_typological.csv")
     p.add_argument("--meta", type=str, default="output/metadata.csv")
     p.add_argument("--topk_csv", type=str, default="out_corr/topk_per_feature.csv")
     p.add_argument("--gen", type=str, default="output/genetic_neighbours.json")
+    p.add_argument("--gen_detail", type=str, default="output/genetic_neighbours_detailed.json")
     p.add_argument("--geo", type=str, default="output/geographic_neighbours.json")
+    p.add_argument("--retrieval_backend", type=str, default="legacy")
+    p.add_argument("--kg_nodes", type=str, default=None)
+    p.add_argument("--kg_edges", type=str, default=None)
     p.add_argument("--high_n", type=int, default=50)
     p.add_argument("--low_n", type=int, default=50)
     p.add_argument("--min_observed_low", type=int, default=5)
     p.add_argument("--per_language", type=int, default=20)
     p.add_argument("--top_n", type=int, default=10)
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--prompt_version", type=str, default="v5_glottolog_tree_json")
+    p.add_argument(
+        "--include_vote_table",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include compact vote summary table in prompt context.",
+    )
     p.add_argument("--prompts_out", type=str, default="benchmark/prompts_eval.jsonl")
     p.add_argument("--prompts_high_out", type=str, default="benchmark/prompts_eval_high.jsonl")
     p.add_argument("--prompts_low_out", type=str, default="benchmark/prompts_eval_low.jsonl")
@@ -150,9 +160,16 @@ def main() -> None:
 
     with open(args.gen, "r", encoding="utf-8") as f:
         genetic = json.load(f)
+    gen_detail_path = Path(args.gen_detail)
+    if gen_detail_path.exists():
+        with gen_detail_path.open("r", encoding="utf-8") as f:
+            genetic_detail = json.load(f)
+    else:
+        genetic_detail = {}
     with open(args.geo, "r", encoding="utf-8") as f:
         geographic = json.load(f)
     genetic = {str(k): v for k, v in genetic.items()}
+    genetic_detail = {str(k): v for k, v in genetic_detail.items()}
     geographic = {str(k): v for k, v in geographic.items()}
 
     tmp: Dict[str, List[Tuple[int, str]]] = {}
@@ -170,9 +187,14 @@ def main() -> None:
     prompting.typ_df = typ_df.copy()
     prompting.metadata_df = meta_df
     prompting.genetic_neighbours = genetic
+    if hasattr(prompting, "genetic_neighbour_details"):
+        prompting.genetic_neighbour_details = genetic_detail
     prompting.geographic_neighbours = geographic
     prompting.top_n_features = args.top_n
     prompting.topk_map = topk_map
+    prompting.set_prompt_options(args.prompt_version, args.include_vote_table)
+    if hasattr(prompting, "set_retrieval_options"):
+        prompting.set_retrieval_options(args.retrieval_backend, args.kg_nodes, args.kg_edges)
 
     Path(args.prompts_out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.prompts_high_out).parent.mkdir(parents=True, exist_ok=True)
