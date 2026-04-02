@@ -27,6 +27,8 @@ class KGGraph:
         glottocode_to_language_id: Dict[str, str],
         feature_to_id: Dict[str, str],
         language_order: List[str],
+        language_observations: Dict[str, Dict[str, str]],
+        feature_correlations: Dict[str, List[str]],
     ) -> None:
         self.nodes_by_id = nodes_by_id
         self.edges = edges
@@ -36,6 +38,8 @@ class KGGraph:
         self.glottocode_to_language_id = glottocode_to_language_id
         self.feature_to_id = feature_to_id
         self.language_order = language_order
+        self.language_observations = language_observations
+        self.feature_correlations = feature_correlations
 
     def node(self, node_id: str) -> Optional[dict]:
         return self.nodes_by_id.get(node_id)
@@ -73,6 +77,8 @@ def build_kg_graph(nodes: Iterable[dict], edges: Iterable[dict]) -> KGGraph:
     glottocode_to_language_id: Dict[str, str] = {}
     feature_to_id: Dict[str, str] = {}
     language_with_order: List[tuple[int, str]] = []
+    language_id_to_glottocode: Dict[str, str] = {}
+    feature_id_to_name: Dict[str, str] = {}
 
     for node in node_list:
         node_id = str(node["id"])
@@ -81,6 +87,7 @@ def build_kg_graph(nodes: Iterable[dict], edges: Iterable[dict]) -> KGGraph:
             glottocode = str(node.get("glottocode", "")).strip()
             if glottocode:
                 glottocode_to_language_id[glottocode] = node_id
+                language_id_to_glottocode[node_id] = glottocode
                 try:
                     order_index = int(node.get("order_index", len(language_with_order)))
                 except Exception:
@@ -90,7 +97,10 @@ def build_kg_graph(nodes: Iterable[dict], edges: Iterable[dict]) -> KGGraph:
             feature_id = str(node.get("feature_id", "")).strip()
             if feature_id:
                 feature_to_id[feature_id] = node_id
+                feature_id_to_name[node_id] = feature_id
 
+    language_observations: DefaultDict[str, Dict[str, str]] = defaultdict(dict)
+    feature_correlations: DefaultDict[str, List[tuple[int, str]]] = defaultdict(list)
     for edge in edge_list:
         source = str(edge["source"])
         target = str(edge["target"])
@@ -98,6 +108,21 @@ def build_kg_graph(nodes: Iterable[dict], edges: Iterable[dict]) -> KGGraph:
         outgoing_all[source].append(edge)
         outgoing_by_type[edge_type][source].append(edge)
         incoming_by_type[edge_type][target].append(edge)
+        if edge_type == "OBSERVED_AS":
+            glottocode = language_id_to_glottocode.get(source)
+            feature_id = str(edge.get("feature_id") or "")
+            value = edge.get("value")
+            if glottocode and feature_id and value is not None:
+                language_observations[glottocode][feature_id] = str(value)
+        elif edge_type == "FEATURE_CORRELATED":
+            source_feature = feature_id_to_name.get(source)
+            target_feature = feature_id_to_name.get(target)
+            if source_feature and target_feature:
+                try:
+                    rank = int(edge.get("rank", len(feature_correlations[source_feature]) + 1))
+                except Exception:
+                    rank = len(feature_correlations[source_feature]) + 1
+                feature_correlations[source_feature].append((rank, target_feature))
 
     language_order = [gc for _, gc in sorted(language_with_order, key=lambda item: (item[0], item[1]))]
     return KGGraph(
@@ -109,6 +134,11 @@ def build_kg_graph(nodes: Iterable[dict], edges: Iterable[dict]) -> KGGraph:
         glottocode_to_language_id=glottocode_to_language_id,
         feature_to_id=feature_to_id,
         language_order=language_order,
+        language_observations={gc: dict(obs) for gc, obs in language_observations.items()},
+        feature_correlations={
+            feature: [other for _, other in sorted(items, key=lambda item: (item[0], item[1]))]
+            for feature, items in feature_correlations.items()
+        },
     )
 
 

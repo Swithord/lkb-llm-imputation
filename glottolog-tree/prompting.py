@@ -46,9 +46,13 @@ _KG_GRAPH = None
 
 
 def _selection_variant() -> str:
-    if PROMPT_VERSION in {"v4_strict_json", "v5_glottolog_tree_json"}:
+    if PROMPT_VERSION in {"v4_strict_json", "v5_glottolog_tree_json", "v5_glottolog_tree_compact_json"}:
         return "v4"
     return "v3"
+
+
+def _is_compact_prompt() -> bool:
+    return PROMPT_VERSION == "v5_glottolog_tree_compact_json"
 
 
 def _sync_base_globals() -> None:
@@ -85,7 +89,7 @@ def _ensure_kg_graph():
     global _KG_GRAPH
     if _KG_GRAPH is not None:
         return _KG_GRAPH
-    if RETRIEVAL_BACKEND != "kg_flat":
+    if RETRIEVAL_BACKEND not in {"kg_flat", "kg_typed", "kg_typed_contrastive", "hybrid_flat_kg"}:
         return None
     if not KG_NODES_PATH or not KG_EDGES_PATH:
         raise RuntimeError("KG retrieval requires both KG_NODES_PATH and KG_EDGES_PATH.")
@@ -123,11 +127,7 @@ def _normalized_phylo_record(raw, fallback_rank: int) -> Optional[Dict[str, obje
     }
 
 
-def _ranked_phylo_records(language: str, pool_limit: int = 400) -> List[Dict[str, object]]:
-    if RETRIEVAL_BACKEND == "kg_flat":
-        graph = _ensure_kg_graph()
-        return _KG_RETRIEVAL.ranked_phylo_records(graph, language, pool_limit=pool_limit)
-
+def _legacy_ranked_phylo_records(language: str, pool_limit: int = 400) -> List[Dict[str, object]]:
     ranked: List[Dict[str, object]] = []
     seen = {language}
 
@@ -195,21 +195,143 @@ def _ranked_phylo_records(language: str, pool_limit: int = 400) -> List[Dict[str
     return ranked
 
 
+def _ranked_phylo_records(language: str, pool_limit: int = 400) -> List[Dict[str, object]]:
+    if RETRIEVAL_BACKEND == "kg_flat":
+        graph = _ensure_kg_graph()
+        return _KG_RETRIEVAL.ranked_phylo_records(graph, language, pool_limit=pool_limit)
+    return _legacy_ranked_phylo_records(language, pool_limit=pool_limit)
+
+
 def _ranked_phylo_candidates(language: str, pool_limit: int = 400) -> List[str]:
     return [str(rec["glottocode"]) for rec in _ranked_phylo_records(language, pool_limit=pool_limit)]
+
+
+def _legacy_ranked_geo_candidates(language: str, pool_limit: int = 1200) -> List[str]:
+    return _BASE_RANKED_GEO_CANDIDATES(language, pool_limit=pool_limit)
 
 
 def _ranked_geo_candidates(language: str, pool_limit: int = 1200) -> List[str]:
     if RETRIEVAL_BACKEND == "kg_flat":
         graph = _ensure_kg_graph()
         return _KG_RETRIEVAL.ranked_geo_candidates(graph, language, pool_limit=pool_limit)
-    return _BASE_RANKED_GEO_CANDIDATES(language, pool_limit=pool_limit)
+    return _legacy_ranked_geo_candidates(language, pool_limit=pool_limit)
+
+
+def _merge_record_lists(
+    primary: Sequence[Dict[str, object]],
+    supplemental: Sequence[Dict[str, object]],
+    pool_limit: int = 400,
+    preserve_prefix: int = 2,
+) -> List[Dict[str, object]]:
+    merged: List[Dict[str, object]] = []
+    seen: set[str] = set()
+
+    def add_record(rec: Dict[str, object]) -> None:
+        glottocode = str(rec.get("glottocode", "")).strip()
+        if not glottocode or glottocode in seen or len(merged) >= pool_limit:
+            return
+        seen.add(glottocode)
+        merged.append(rec)
+
+    for rec in list(primary)[:preserve_prefix]:
+        add_record(rec)
+    for rec in supplemental:
+        add_record(rec)
+    for rec in primary:
+        add_record(rec)
+    return merged
+
+
+def _merge_candidate_lists(
+    primary: Sequence[str],
+    supplemental: Sequence[str],
+    pool_limit: int = 1200,
+    preserve_prefix: int = 2,
+) -> List[str]:
+    merged: List[str] = []
+    seen: set[str] = set()
+
+    def add_candidate(candidate: str) -> None:
+        code = str(candidate)
+        if not code or code in seen or len(merged) >= pool_limit:
+            return
+        seen.add(code)
+        merged.append(code)
+
+    for candidate in list(primary)[:preserve_prefix]:
+        add_candidate(candidate)
+    for candidate in supplemental:
+        add_candidate(candidate)
+    for candidate in primary:
+        add_candidate(candidate)
+    return merged
+
+
+def _feature_conditioned_phylo_records(language: str, feature: str, correlated: Sequence[str], pool_limit: int = 400) -> List[Dict[str, object]]:
+    if RETRIEVAL_BACKEND in {"kg_typed", "kg_typed_contrastive"}:
+        graph = _ensure_kg_graph()
+        return _KG_RETRIEVAL.ranked_phylo_records_typed(
+            graph,
+            language=language,
+            target_feature=feature,
+            correlated=correlated,
+            pool_limit=pool_limit,
+        )
+    if RETRIEVAL_BACKEND == "hybrid_flat_kg":
+        graph = _ensure_kg_graph()
+        legacy_records = _legacy_ranked_phylo_records(language, pool_limit=pool_limit)
+        typed_records = _KG_RETRIEVAL.ranked_phylo_records_typed(
+            graph,
+            language=language,
+            target_feature=feature,
+            correlated=correlated,
+            pool_limit=min(pool_limit, 32),
+        )
+        return _merge_record_lists(legacy_records, typed_records, pool_limit=pool_limit, preserve_prefix=2)
+    return _ranked_phylo_records(language, pool_limit=pool_limit)
+
+
+def _feature_conditioned_geo_candidates(language: str, feature: str, correlated: Sequence[str], pool_limit: int = 1200) -> List[str]:
+    if RETRIEVAL_BACKEND in {"kg_typed", "kg_typed_contrastive"}:
+        graph = _ensure_kg_graph()
+        return _KG_RETRIEVAL.ranked_geo_candidates_typed(
+            graph,
+            language=language,
+            target_feature=feature,
+            correlated=correlated,
+            pool_limit=pool_limit,
+        )
+    if RETRIEVAL_BACKEND == "hybrid_flat_kg":
+        graph = _ensure_kg_graph()
+        legacy_candidates = _legacy_ranked_geo_candidates(language, pool_limit=pool_limit)
+        typed_candidates = _KG_RETRIEVAL.ranked_geo_candidates_typed(
+            graph,
+            language=language,
+            target_feature=feature,
+            correlated=correlated,
+            pool_limit=min(pool_limit, 32),
+        )
+        return _merge_candidate_lists(legacy_candidates, typed_candidates, pool_limit=pool_limit, preserve_prefix=2)
+    return _ranked_geo_candidates(language, pool_limit=pool_limit)
 
 
 def _relation_label(value: object) -> str:
     if value is None:
         return "unknown"
     return str(value).replace("_", " ")
+
+
+def _compact_relation_label(value: object) -> str:
+    relation = str(value or "unknown")
+    mapping = {
+        "same_immediate_branch": "same branch",
+        "sibling_branch": "sibling branch",
+        "nearby_cousin_branch": "cousin branch",
+        "higher_shared_ancestor": "higher ancestor",
+        "phylogenetic_neighbor": "nearby branch",
+        "phylogenetic_fallback": "fallback",
+    }
+    return mapping.get(relation, relation.replace("_", " "))
 
 
 def _format_shared_ancestor_depth(value: object) -> str:
@@ -226,17 +348,22 @@ def _format_phylo_neighbor_block(
     phylo_record_map: Dict[str, Dict[str, object]],
     target_feature: str,
     correlated: Sequence[str],
+    compact: bool = False,
 ) -> List[str]:
     lines: List[str] = []
     for idx, nb in enumerate(neighbors, start=1):
         label = _BASE._language_label(nb)
         rec = phylo_record_map.get(str(nb), {})
         tree_distance = _coerce_non_negative_int(rec.get("tree_distance"), idx)
-        relation_type = _relation_label(rec.get("relation_type"))
-        shared_depth = _format_shared_ancestor_depth(rec.get("shared_ancestor_depth"))
-        lines.append(
-            f"{idx}) {label} (glottocode={nb}, relation={relation_type}, tree_distance={tree_distance}, shared_ancestor_depth={shared_depth}):"
-        )
+        if compact:
+            relation_type = _compact_relation_label(rec.get("relation_type"))
+            lines.append(f"{idx}) {label} (relation={relation_type}, tree_distance={tree_distance}):")
+        else:
+            relation_type = _relation_label(rec.get("relation_type"))
+            shared_depth = _format_shared_ancestor_depth(rec.get("shared_ancestor_depth"))
+            lines.append(
+                f"{idx}) {label} (glottocode={nb}, relation={relation_type}, tree_distance={tree_distance}, shared_ancestor_depth={shared_depth}):"
+            )
         facts = _BASE._collect_neighbor_facts(nb, target_feature, correlated, limit=4, max_correlated_fallback=3)
         if facts:
             for feat, value in facts:
@@ -244,6 +371,30 @@ def _format_phylo_neighbor_block(
         else:
             lines.append("- No observed target or anchor facts available.")
     return lines
+
+
+def _contrastive_force_include(candidates: Sequence[str], feature: str) -> List[str]:
+    ordered: List[str] = []
+    seen: set[str] = set()
+    for desired_value in ("1", "0"):
+        candidate = _BASE._nearest_candidate_with_value(candidates, feature, desired_value)
+        if candidate is None or candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return ordered
+
+
+def _ordered_unique(values: Sequence[str]) -> List[str]:
+    ordered: List[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = str(value)
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
 
 
 def _nearest_phylo_supporting_neighbor(
@@ -307,13 +458,23 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         f"- Location: latitude={lat}, longitude={lon}",
     ]
 
+    correlated = _BASE._effective_correlated_features(language, feature, top_n_features, fallback_n=15)
     phylo_k = _BASE._neighbor_k_for_language(genetic_neighbours, language)
-    phylo_records = _ranked_phylo_records(language)
+    legacy_phylo_candidates = []
+    if RETRIEVAL_BACKEND == "hybrid_flat_kg":
+        legacy_phylo_candidates = [str(rec["glottocode"]) for rec in _legacy_ranked_phylo_records(language)]
+    phylo_records = _feature_conditioned_phylo_records(language, feature, correlated)
     phylo_candidates = [str(rec["glottocode"]) for rec in phylo_records]
     phylo_record_map = {str(rec["glottocode"]): rec for rec in phylo_records}
-    correlated = _BASE._effective_correlated_features(language, feature, top_n_features, fallback_n=15)
-    phylo_yes_nb = _BASE._nearest_candidate_with_value(phylo_candidates, feature, "1")
-    phylo_force = [phylo_yes_nb] if phylo_yes_nb is not None else []
+    if RETRIEVAL_BACKEND in {"kg_typed_contrastive", "hybrid_flat_kg"}:
+        contrastive_force = _contrastive_force_include(phylo_candidates, feature)
+        if RETRIEVAL_BACKEND == "hybrid_flat_kg":
+            phylo_force = _ordered_unique(list(legacy_phylo_candidates[: min(2, phylo_k)]) + contrastive_force)
+        else:
+            phylo_force = contrastive_force
+    else:
+        phylo_yes_nb = _BASE._nearest_candidate_with_value(phylo_candidates, feature, "1")
+        phylo_force = [phylo_yes_nb] if phylo_yes_nb is not None else []
     phylo_neighbors = _BASE._select_neighbors_with_feature_coverage(
         phylo_candidates,
         correlated,
@@ -325,9 +486,19 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     )
 
     geo_k = _BASE._neighbor_k_for_language(geographic_neighbours, language)
-    geo_candidates = _ranked_geo_candidates(language)
-    geo_yes_nb = _BASE._nearest_candidate_with_value(geo_candidates, feature, "1")
-    geo_force = [geo_yes_nb] if geo_yes_nb is not None else []
+    legacy_geo_candidates = []
+    if RETRIEVAL_BACKEND == "hybrid_flat_kg":
+        legacy_geo_candidates = _legacy_ranked_geo_candidates(language)
+    geo_candidates = _feature_conditioned_geo_candidates(language, feature, correlated)
+    if RETRIEVAL_BACKEND in {"kg_typed_contrastive", "hybrid_flat_kg"}:
+        contrastive_geo_force = _contrastive_force_include(geo_candidates, feature)
+        if RETRIEVAL_BACKEND == "hybrid_flat_kg":
+            geo_force = _ordered_unique(list(legacy_geo_candidates[: min(1, geo_k)]) + contrastive_geo_force)
+        else:
+            geo_force = contrastive_geo_force
+    else:
+        geo_yes_nb = _BASE._nearest_candidate_with_value(geo_candidates, feature, "1")
+        geo_force = [geo_yes_nb] if geo_yes_nb is not None else []
     geo_neighbors = _BASE._select_neighbors_with_feature_coverage(
         geo_candidates,
         correlated,
@@ -355,14 +526,19 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append("- (no observed anchor facts)")
 
     allowed = _BASE._allowed_values(feature)
-    if PROMPT_VERSION == "v5_glottolog_tree_json":
-        user_lines.append("Glottolog-tree retrieved evidence (detailed evidence):")
+    if PROMPT_VERSION in {"v5_glottolog_tree_json", "v5_glottolog_tree_compact_json"}:
+        user_lines.append(
+            "Glottolog-tree retrieved evidence (compact evidence):"
+            if _is_compact_prompt()
+            else "Glottolog-tree retrieved evidence (detailed evidence):"
+        )
         user_lines.extend(
             _format_phylo_neighbor_block(
                 phylo_neighbors,
                 phylo_record_map,
                 feature,
                 correlated,
+                compact=_is_compact_prompt(),
             )
         )
         user_lines.append("Selected geographic neighbors (detailed evidence):")
@@ -418,7 +594,7 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         else:
             user_lines.append("- No reliable correlated clues with enough support.")
 
-        user_lines.append("Prompt version: v5_glottolog_tree_json")
+        user_lines.append(f"Prompt version: {PROMPT_VERSION}")
         user_lines.append("Task:")
         user_lines.append("Predict the missing value for the following feature:")
         user_lines.append(f"- Feature: {feature}")
@@ -468,9 +644,14 @@ def main() -> None:
     p.add_argument("--gen", type=str, required=True, help="Genetic neighbours JSON.")
     p.add_argument("--gen_detail", type=str, default="output/genetic_neighbours_detailed.json")
     p.add_argument("--geo", type=str, required=True, help="Geographic neighbours JSON.")
-    p.add_argument("--retrieval_backend", type=str, default="legacy", choices=["legacy", "kg_flat"])
-    p.add_argument("--kg_nodes", type=str, default=None, help="Optional KG nodes JSONL path for kg_flat retrieval.")
-    p.add_argument("--kg_edges", type=str, default=None, help="Optional KG edges JSONL path for kg_flat retrieval.")
+    p.add_argument(
+        "--retrieval_backend",
+        type=str,
+        default="legacy",
+        choices=["legacy", "kg_flat", "kg_typed", "kg_typed_contrastive", "hybrid_flat_kg"],
+    )
+    p.add_argument("--kg_nodes", type=str, default=None, help="Optional KG nodes JSONL path for KG-backed retrieval.")
+    p.add_argument("--kg_edges", type=str, default=None, help="Optional KG edges JSONL path for KG-backed retrieval.")
     p.add_argument("--top_n", type=int, default=10, help="Top-N correlated features to include.")
     p.add_argument("--impute", type=str, default=None, help="Optional JSON list/dict of (language, feature) pairs.")
     p.add_argument("--out", type=str, required=True, help="Output file. JSONL for prompts mode, JSON for predict mode.")

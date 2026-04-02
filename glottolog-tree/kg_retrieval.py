@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -149,6 +149,128 @@ def ranked_phylo_candidates(graph, language: str, pool_limit: int = 400) -> List
     return [str(rec["glottocode"]) for rec in ranked_phylo_records(graph, language, pool_limit=pool_limit)]
 
 
+_RELATION_PRIORITY = {
+    "same_immediate_branch": 5,
+    "sibling_branch": 4,
+    "nearby_cousin_branch": 3,
+    "higher_shared_ancestor": 2,
+    "phylogenetic_neighbor": 2,
+    "phylogenetic_fallback": 0,
+}
+
+
+def _observed_value(graph, language: str, feature: str) -> Optional[str]:
+    return graph.language_observations.get(str(language), {}).get(str(feature))
+
+
+def _has_observed_value(graph, language: str, feature: str) -> bool:
+    return _observed_value(graph, language, feature) is not None
+
+
+def _observed_feature_set(graph, language: str, features: Sequence[str]) -> set[str]:
+    observed = graph.language_observations.get(str(language), {})
+    return {str(feature) for feature in features if str(feature) in observed}
+
+
+def _shared_feature_value_count(graph, reference_language: str, candidate_language: str, features: Sequence[str]) -> int:
+    reference = graph.language_observations.get(str(reference_language), {})
+    candidate = graph.language_observations.get(str(candidate_language), {})
+    score = 0
+    for feature in features:
+        feat = str(feature)
+        if feat in reference and feat in candidate and reference[feat] == candidate[feat]:
+            score += 1
+    return score
+
+
+def _typed_phylo_score(
+    graph,
+    reference_language: str,
+    candidate_language: str,
+    record: Dict[str, object],
+    target_feature: str,
+    correlated: Sequence[str],
+    original_rank: int,
+) -> tuple:
+    relation_type = str(record.get("relation_type") or "phylogenetic_neighbor")
+    tree_distance = _coerce_non_negative_int(record.get("tree_distance"), original_rank + 1)
+    shared_depth = record.get("shared_ancestor_depth")
+    try:
+        shared_depth_num = int(shared_depth) if shared_depth is not None else 999
+    except Exception:
+        shared_depth_num = 999
+
+    feature_targets = [str(feature) for feature in correlated if str(feature) != str(target_feature)]
+    if str(target_feature) not in feature_targets:
+        feature_targets.append(str(target_feature))
+
+    has_target = 1 if _has_observed_value(graph, candidate_language, target_feature) else 0
+    ref_observed = _observed_feature_set(graph, reference_language, feature_targets)
+    cand_observed = _observed_feature_set(graph, candidate_language, feature_targets)
+    anchor_overlap = len((cand_observed & ref_observed) - ({str(target_feature)}))
+    new_coverage = len(cand_observed - ref_observed)
+    shared_values = _shared_feature_value_count(graph, reference_language, candidate_language, feature_targets)
+    relation_priority = _RELATION_PRIORITY.get(relation_type, 1)
+    fallback_penalty = 1 if relation_type == "phylogenetic_fallback" else 0
+
+    return (
+        -fallback_penalty,
+        has_target,
+        relation_priority,
+        anchor_overlap,
+        shared_values,
+        new_coverage,
+        -tree_distance,
+        -shared_depth_num,
+        -original_rank,
+        str(candidate_language),
+    )
+
+
+def ranked_phylo_records_typed(
+    graph,
+    language: str,
+    target_feature: str,
+    correlated: Sequence[str],
+    pool_limit: int = 400,
+) -> List[Dict[str, object]]:
+    base_records = ranked_phylo_records(graph, language, pool_limit=pool_limit)
+    scored: List[tuple[tuple, int, Dict[str, object]]] = []
+    for original_rank, record in enumerate(base_records):
+        candidate_language = str(record["glottocode"])
+        score = _typed_phylo_score(
+            graph,
+            reference_language=language,
+            candidate_language=candidate_language,
+            record=record,
+            target_feature=target_feature,
+            correlated=correlated,
+            original_rank=original_rank,
+        )
+        scored.append((score, original_rank, record))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [record for _, _, record in scored[:pool_limit]]
+
+
+def ranked_phylo_candidates_typed(
+    graph,
+    language: str,
+    target_feature: str,
+    correlated: Sequence[str],
+    pool_limit: int = 400,
+) -> List[str]:
+    return [
+        str(record["glottocode"])
+        for record in ranked_phylo_records_typed(
+            graph,
+            language=language,
+            target_feature=target_feature,
+            correlated=correlated,
+            pool_limit=pool_limit,
+        )
+    ]
+
+
 def ranked_geo_candidates(graph, language: str, pool_limit: int = 1200) -> List[str]:
     lang_node = graph.language_node(language)
     if lang_node is None:
@@ -205,3 +327,49 @@ def ranked_geo_candidates(graph, language: str, pool_limit: int = 1200) -> List[
         if len(ranked) >= pool_limit:
             break
     return ranked
+
+
+def _typed_geo_score(
+    graph,
+    reference_language: str,
+    candidate_language: str,
+    target_feature: str,
+    correlated: Sequence[str],
+    original_rank: int,
+) -> tuple:
+    feature_targets = [str(feature) for feature in correlated if str(feature) != str(target_feature)]
+    if str(target_feature) not in feature_targets:
+        feature_targets.append(str(target_feature))
+    has_target = 1 if _has_observed_value(graph, candidate_language, target_feature) else 0
+    ref_observed = _observed_feature_set(graph, reference_language, feature_targets)
+    cand_observed = _observed_feature_set(graph, candidate_language, feature_targets)
+    anchor_overlap = len((cand_observed & ref_observed) - ({str(target_feature)}))
+    shared_values = _shared_feature_value_count(graph, reference_language, candidate_language, feature_targets)
+    return (has_target, anchor_overlap, shared_values, -original_rank, str(candidate_language))
+
+
+def ranked_geo_candidates_typed(
+    graph,
+    language: str,
+    target_feature: str,
+    correlated: Sequence[str],
+    pool_limit: int = 1200,
+) -> List[str]:
+    base_candidates = ranked_geo_candidates(graph, language, pool_limit=pool_limit)
+    scored: List[tuple[tuple, str]] = []
+    for original_rank, candidate_language in enumerate(base_candidates):
+        scored.append(
+            (
+                _typed_geo_score(
+                    graph,
+                    reference_language=language,
+                    candidate_language=str(candidate_language),
+                    target_feature=target_feature,
+                    correlated=correlated,
+                    original_rank=original_rank,
+                ),
+                str(candidate_language),
+            )
+        )
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [candidate for _, candidate in scored[:pool_limit]]
