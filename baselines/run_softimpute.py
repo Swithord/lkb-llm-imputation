@@ -11,13 +11,83 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.utils.extmath import randomized_svd
+
+try:
+    from sklearn.utils.extmath import randomized_svd as _sklearn_randomized_svd
+except Exception:
+    _sklearn_randomized_svd = None
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from eval_metrics import compute_binary_metrics
+
+
+def _truncated_svd(
+    X: np.ndarray,
+    n_components: int,
+    n_iter: int,
+    random_state: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if _sklearn_randomized_svd is not None:
+        return _sklearn_randomized_svd(X, n_components=n_components, n_iter=n_iter, random_state=random_state)
+    U, s, Vt = np.linalg.svd(X, full_matrices=False)
+    rank = min(int(n_components), len(s))
+    return U[:, :rank], s[:rank], Vt[:rank, :]
+
+
+def _feature_prevalence_from_nan_matrix(X: np.ndarray) -> tuple[np.ndarray, float]:
+    observed = ~np.isnan(X)
+    counts = np.sum(observed, axis=0)
+    total_observed = int(np.sum(observed))
+    global_p1 = float(np.nansum(X) / total_observed) if total_observed else 0.5
+    feat_p1 = np.full(X.shape[1], global_p1, dtype=float)
+    np.divide(np.nansum(X, axis=0), counts, out=feat_p1, where=counts > 0)
+    return np.clip(feat_p1, 0.0, 1.0), float(np.clip(global_p1, 0.0, 1.0))
+
+
+def _prepare_softimpute_input(
+    X: np.ndarray,
+    input_transform: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    observed = ~np.isnan(X)
+    feat_means, _ = _feature_prevalence_from_nan_matrix(X)
+    feat_scales = np.ones(X.shape[1], dtype=float)
+
+    if input_transform == "raw":
+        X_work = np.array(X, dtype=float, copy=True)
+        return X_work, np.zeros(X.shape[1], dtype=float), feat_scales
+
+    X_work = np.array(X, dtype=float, copy=True)
+    X_work[observed] = X_work[observed] - np.take(feat_means, np.where(observed)[1])
+
+    if input_transform == "centered":
+        return X_work, feat_means, feat_scales
+
+    if input_transform == "standardized":
+        counts = np.sum(observed, axis=0)
+        centered_sq = np.zeros(X.shape[1], dtype=float)
+        centered_vals = X_work[observed]
+        np.add.at(centered_sq, np.where(observed)[1], centered_vals * centered_vals)
+        denom = np.maximum(counts - 1, 1)
+        feat_scales = np.sqrt(centered_sq / denom)
+        feat_scales = np.where((counts > 1) & (feat_scales > 1e-8), feat_scales, 1.0)
+        X_work[observed] = X_work[observed] / np.take(feat_scales, np.where(observed)[1])
+        return X_work, feat_means, feat_scales
+
+    raise ValueError(f"Unsupported input_transform: {input_transform}")
+
+
+def _restore_softimpute_output(
+    X_completed: np.ndarray,
+    offsets: np.ndarray,
+    scales: np.ndarray,
+) -> np.ndarray:
+    restored = np.array(X_completed, dtype=float, copy=True)
+    restored *= scales[None, :]
+    restored += offsets[None, :]
+    return np.clip(restored, 0.0, 1.0)
 
 
 def _soft_impute_fit_transform(
@@ -35,7 +105,7 @@ def _soft_impute_fit_transform(
     X_work[missing_mask] = 0.0
 
     if shrinkage_value is None:
-        _, s0, _ = randomized_svd(X_work, n_components=1, n_iter=5, random_state=0)
+        _, s0, _ = _truncated_svd(X_work, n_components=1, n_iter=5, random_state=0)
         shrinkage = float(s0[0]) / 50.0
     else:
         shrinkage = float(shrinkage_value)
@@ -44,7 +114,7 @@ def _soft_impute_fit_transform(
         old_missing = X_work[missing_mask].copy()
         if max_rank is not None:
             rank = min(int(max_rank), min(X_work.shape))
-            U, s, Vt = randomized_svd(X_work, n_components=rank, n_iter=1, random_state=0)
+            U, s, Vt = _truncated_svd(X_work, n_components=rank, n_iter=1, random_state=0)
         else:
             U, s, Vt = np.linalg.svd(X_work, full_matrices=False)
 
@@ -66,6 +136,25 @@ def _soft_impute_fit_transform(
             break
 
     return X_work
+
+
+def _soft_impute_probabilities(
+    X: np.ndarray,
+    max_rank: int | None = 64,
+    max_iters: int = 100,
+    convergence_threshold: float = 1e-5,
+    shrinkage_value: float | None = None,
+    input_transform: str = "centered",
+) -> np.ndarray:
+    X_prepared, offsets, scales = _prepare_softimpute_input(X, input_transform=input_transform)
+    X_completed = _soft_impute_fit_transform(
+        X_prepared,
+        max_rank=max_rank,
+        max_iters=max_iters,
+        convergence_threshold=convergence_threshold,
+        shrinkage_value=shrinkage_value,
+    )
+    return _restore_softimpute_output(X_completed, offsets=offsets, scales=scales)
 
 
 def _load_mask(path: str, expected_shape: tuple[int, int]) -> np.ndarray:
@@ -123,6 +212,23 @@ def _write_predictions(path: Path, predictions: list[dict[str, Any]]) -> None:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+def _resolve_decision_thresholds(
+    train_matrix: np.ndarray,
+    threshold_mode: str,
+    fixed_threshold: float,
+) -> tuple[np.ndarray, float]:
+    feat_p1, global_p1 = _feature_prevalence_from_nan_matrix(train_matrix)
+    if threshold_mode == "fixed":
+        thresholds = np.full(train_matrix.shape[1], float(np.clip(fixed_threshold, 0.0, 1.0)), dtype=float)
+    elif threshold_mode == "feature_prevalence":
+        thresholds = feat_p1.astype(float, copy=True)
+    elif threshold_mode == "global_prevalence":
+        thresholds = np.full(train_matrix.shape[1], global_p1, dtype=float)
+    else:
+        raise ValueError(f"Unsupported threshold_mode: {threshold_mode}")
+    return np.clip(thresholds, 0.0, 1.0), global_p1
+
+
 def _metrics_for_subset(
     y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray, languages: np.ndarray, subset_langs: set[str]
 ) -> dict[str, float]:
@@ -145,6 +251,7 @@ def _build_records_for_mask(
     eval_mask: np.ndarray,
     probs: np.ndarray,
     baseline_name: str,
+    decision_thresholds: np.ndarray,
 ) -> tuple[list[dict[str, Any]], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     binary = _to_binary_array(typology_df.to_numpy())
     row_labels = typology_df.index.astype(str).to_numpy()
@@ -159,7 +266,7 @@ def _build_records_for_mask(
 
     for idx, (ri, ci) in enumerate(indices):
         p = float(np.clip(probs[ri, ci], 0.0, 1.0))
-        pred = 1 if p >= 0.5 else 0
+        pred = 1 if p >= float(decision_thresholds[ci]) else 0
         gold = int(binary[ri, ci])
 
         lang = str(row_labels[ri])
@@ -217,6 +324,26 @@ def main() -> None:
     parser.add_argument("--max_iters", type=int, default=100)
     parser.add_argument("--convergence_threshold", type=float, default=1e-5)
     parser.add_argument("--shrinkage_value", type=float, default=None)
+    parser.add_argument(
+        "--input_transform",
+        type=str,
+        default="centered",
+        choices=["raw", "centered", "standardized"],
+        help="Transform observed 0/1 values before SoftImpute, then invert back to probability space.",
+    )
+    parser.add_argument(
+        "--threshold_mode",
+        type=str,
+        default="fixed",
+        choices=["fixed", "feature_prevalence", "global_prevalence"],
+        help="Decision rule for mapping SoftImpute probabilities to binary predictions.",
+    )
+    parser.add_argument(
+        "--decision_threshold",
+        type=float,
+        default=0.5,
+        help="Used when --threshold_mode=fixed.",
+    )
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -243,15 +370,21 @@ def main() -> None:
 
     # Strict protocol requested: fit on train-observed entries only.
     train_matrix = np.where(train_observed, values, np.nan)
+    decision_thresholds, global_train_positive_rate = _resolve_decision_thresholds(
+        train_matrix,
+        threshold_mode=args.threshold_mode,
+        fixed_threshold=args.decision_threshold,
+    )
 
     mem_before = _max_rss_mb()
     t0 = time.perf_counter()
-    imputed = _soft_impute_fit_transform(
+    imputed = _soft_impute_probabilities(
         train_matrix,
         max_rank=args.max_rank,
         max_iters=args.max_iters,
         convergence_threshold=args.convergence_threshold,
         shrinkage_value=args.shrinkage_value,
+        input_transform=args.input_transform,
     )
     fit_seconds = time.perf_counter() - t0
     mem_after = _max_rss_mb()
@@ -261,12 +394,14 @@ def main() -> None:
         eval_mask=test_eval_mask,
         probs=imputed,
         baseline_name="softimpute",
+        decision_thresholds=decision_thresholds,
     )
     _, y_true_dev, y_pred_dev, y_prob_dev, _ = _build_records_for_mask(
         typology_df=typology_df,
         eval_mask=dev_eval_mask,
         probs=imputed,
         baseline_name="softimpute_dev",
+        decision_thresholds=decision_thresholds,
     )
 
     dev_metrics = compute_binary_metrics(y_true_dev, y_pred_dev, y_prob_dev, include_ece=True, ece_bins=10)
@@ -291,7 +426,9 @@ def main() -> None:
             "mask": args.mask,
             "fit_protocol": "fit on train-observed entries only",
             "implementation": "SoftImpute-equivalent iterative singular-value shrinkage",
-            "threshold": 0.5,
+            "input_transform": args.input_transform,
+            "threshold_mode": args.threshold_mode,
+            "decision_threshold": args.decision_threshold if args.threshold_mode == "fixed" else None,
             "params": {
                 "max_rank": args.max_rank,
                 "max_iters": args.max_iters,
@@ -309,6 +446,12 @@ def main() -> None:
             "max_rss_mb_before": mem_before,
             "max_rss_mb_after": mem_after,
             "max_rss_mb_delta": max(0.0, mem_after - mem_before),
+        },
+        "train_distribution": {
+            "global_positive_rate": global_train_positive_rate,
+            "feature_threshold_min": float(np.min(decision_thresholds)),
+            "feature_threshold_max": float(np.max(decision_thresholds)),
+            "feature_threshold_avg": float(np.mean(decision_thresholds)),
         },
         "metrics": {
             "dev": dev_metrics,

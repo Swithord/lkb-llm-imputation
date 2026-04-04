@@ -373,7 +373,7 @@ def test_prompting_kg_typed_contrastive_includes_yes_and_no_support(tmp_path: Pa
     ]
     edges = [
         {"source": "lang:langA", "target": "lang:langB", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 1, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
-        {"source": "lang:langA", "target": "lang:langC", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 2, "tree_distance": 3, "shared_ancestor_depth": 1, "relation_type": "sibling_branch"},
+        {"source": "lang:langA", "target": "lang:langC", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 2, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
         {"source": "lang:langB", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
         {"source": "lang:langC", "target": "fval:feat_target:0", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "0"},
         {"source": "lang:langA", "target": "lang:langB", "type": "GEO_NEAR", "rank": 1, "km": 1.0},
@@ -482,3 +482,45 @@ def test_hybrid_flat_kg_keeps_legacy_prefix_and_adds_graph_support(tmp_path: Pat
     phylo_section = user.split("Selected geographic neighbors", 1)[0]
     assert "Lang B" in phylo_section
     assert "Closest phylogenetic support for 1: Lang C" in user
+
+
+def test_kg_typed_does_not_leak_masked_target_value_from_kg(tmp_path: Path):
+    loader = _load_module("glottolog_tree_kg_loader_leak_test", "glottolog-tree/kg_loader.py")
+    retrieval = _load_module("glottolog_tree_kg_retrieval_leak_test", "glottolog-tree/kg_retrieval.py")
+
+    nodes = [
+        {"id": "lang:langA", "type": "Language", "glottocode": "langA", "order_index": 0},
+        {"id": "lang:langB", "type": "Language", "glottocode": "langB", "order_index": 1},
+        {"id": "lang:langC", "type": "Language", "glottocode": "langC", "order_index": 2},
+        {"id": "feat:feat_target", "type": "Feature", "feature_id": "feat_target"},
+        {"id": "feat:anchor_feat", "type": "Feature", "feature_id": "anchor_feat"},
+        {"id": "fval:feat_target:1", "type": "FeatureValue", "feature_id": "feat_target", "value": "1"},
+        {"id": "fval:feat_target:0", "type": "FeatureValue", "feature_id": "feat_target", "value": "0"},
+        {"id": "fval:anchor_feat:1", "type": "FeatureValue", "feature_id": "anchor_feat", "value": "1"},
+    ]
+    edges = [
+        {"source": "lang:langA", "target": "lang:langB", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 1, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+        {"source": "lang:langA", "target": "lang:langC", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 2, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+        # KG still contains the hidden target gold for langA.
+        {"source": "lang:langA", "target": "fval:feat_target:0", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "0"},
+        {"source": "lang:langA", "target": "fval:anchor_feat:1", "type": "OBSERVED_AS", "feature_id": "anchor_feat", "value": "1"},
+        {"source": "lang:langB", "target": "fval:feat_target:0", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "0"},
+        {"source": "lang:langC", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+        {"source": "lang:langC", "target": "fval:anchor_feat:1", "type": "OBSERVED_AS", "feature_id": "anchor_feat", "value": "1"},
+    ]
+    nodes_path = tmp_path / "kg_nodes.jsonl"
+    edges_path = tmp_path / "kg_edges.jsonl"
+    nodes_path.write_text("".join(json.dumps(node) + "\n" for node in nodes), encoding="utf-8")
+    edges_path.write_text("".join(json.dumps(edge) + "\n" for edge in edges), encoding="utf-8")
+
+    graph = loader.load_kg(nodes_path, edges_path)
+    # Reference observations come from the masked typ_df state: target value hidden.
+    records = retrieval.ranked_phylo_records_typed(
+        graph,
+        language="langA",
+        target_feature="feat_target",
+        correlated=["anchor_feat"],
+        pool_limit=3,
+        reference_observations={"anchor_feat": "1"},
+    )
+    assert [rec["glottocode"] for rec in records[:2]] == ["langC", "langB"]
