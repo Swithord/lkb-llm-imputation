@@ -51,7 +51,7 @@ def main() -> None:
     parser.add_argument("--n_examples", type=int, default=128)
     parser.add_argument("--target_examples", type=int, default=82248)
     parser.add_argument("--pred_out", type=str, default=None)
-    parser.add_argument("--report_out", type=str, default="speed_report.json")
+    parser.add_argument("--report_out", type=str, default="artifacts/reports/speed_report.json")
     parser.add_argument(
         "--strengthen_json_contract",
         action=argparse.BooleanOptionalAction,

@@ -41,10 +41,10 @@ def _make_mcar_mask(observed: np.ndarray, mask_rate: float, seed: int) -> np.nda
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create standardized language split and MCAR mask.")
-    parser.add_argument("--typology_csv", type=str, default="output/uriel+_typological.csv")
-    parser.add_argument("--split_out", type=str, default="splits_v1.json")
-    parser.add_argument("--mask_out", type=str, default="mask_mcar20_seed42.npy")
-    parser.add_argument("--mask_meta_out", type=str, default="mask_mcar20_seed42.json")
+    parser.add_argument("--typology_csv", type=str, default="data/derived/uriel+_typological.csv")
+    parser.add_argument("--split_out", type=str, default="data/splits/splits_v1.json")
+    parser.add_argument("--mask_out", type=str, default="data/splits/mask_mcar20_seed42.npy")
+    parser.add_argument("--mask_meta_out", type=str, default="data/splits/mask_mcar20_seed42.json")
     parser.add_argument("--split_seed", type=int, default=42)
     parser.add_argument("--mask_seed", type=int, default=42)
     parser.add_argument("--train_frac", type=float, default=0.8)

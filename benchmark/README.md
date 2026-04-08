@@ -1,140 +1,79 @@
-# Benchmark Toolkit
+# Benchmark Notes
 
-This folder contains utilities to build and evaluate a high-resource vs low-resource inference benchmark without changing `code/prompting.py`.
+This directory contains the scripts used to build, run, and score the repo's prompt-based imputation benchmarks.
 
-## 1) Build benchmark prompts + gold labels
+## Frozen Benchmark Artifacts
 
-```bash
-.venv/bin/python benchmark/build_benchmark.py \
-  --prompting_py code/prompting.py \
-  --typ output/uriel+_typological.csv \
-  --meta output/metadata.csv \
-  --topk_csv out_corr/topk_per_feature.csv \
-  --gen output/genetic_neighbours.json \
-  --geo output/geographic_neighbours.json \
-  --high_n 50 \
-  --low_n 50 \
-  --per_language 20 \
-  --top_n 10 \
-  --prompts_out benchmark/prompts_eval.jsonl \
-  --prompts_high_out benchmark/prompts_eval_high.jsonl \
-  --prompts_low_out benchmark/prompts_eval_low.jsonl \
-  --gold_out benchmark/gold_eval.jsonl \
-  --groups_out benchmark/language_groups.json
-```
+The current frozen benchmark used for direct model and retrieval comparisons is:
 
-Outputs:
-- `benchmark/prompts_eval.jsonl`: prompts with strict JSON output contract (`value`, `confidence`, `rationale`).
-- `benchmark/prompts_eval_high.jsonl`: prompts for high-resource languages only.
-- `benchmark/prompts_eval_low.jsonl`: prompts for low-resource languages only.
-- `benchmark/gold_eval.jsonl`: gold labels for masked observed cells.
-- `benchmark/language_groups.json`: selected high/low language sets.
+- `data/benchmark/gold_eval_2.jsonl`
+- `data/benchmark/language_groups_2.json`
 
-## 2) Run model inference
+Properties of this frozen set:
 
-Use your preferred inference runner. Make sure prediction records include `id` and either:
-- direct fields: `value`, `confidence`, `rationale`, or
-- field `output` containing a JSON object string with those keys.
+- `1433` total items
+- `1000` items labeled `high`
+- `433` items labeled `low`
+- `50` high-resource languages
+- `50` low-resource languages
 
-Example with the included runner:
+## What Is Standardized
 
-```bash
-.venv/bin/python benchmark/infer_from_prompts.py \
-  --in benchmark/prompts_eval_high.jsonl \
-  --out benchmark/predictions_eval_high.jsonl \
-  --model meta-llama/Llama-3.2-3B-Instruct \
-  --device cuda \
-  --batch_size 4
+When experiments are run through `benchmark/build_prompts_from_gold.py` with `data/benchmark/gold_eval_2.jsonl`, the following are fixed:
 
-.venv/bin/python benchmark/infer_from_prompts.py \
-  --in benchmark/prompts_eval_low.jsonl \
-  --out benchmark/predictions_eval_low.jsonl \
-  --model meta-llama/Llama-3.2-3B-Instruct \
-  --device cuda \
-  --batch_size 4
-```
+- the sampled evaluation items
+- the high/low resource-group labels
+- the output JSON schema
+- the evaluation metrics
 
-## 3) Evaluate predictions
+This is the setup used by:
 
-```bash
-.venv/bin/python benchmark/evaluate_benchmark.py \
-  --gold benchmark/gold_eval.jsonl \
-  --pred benchmark/predictions_eval.jsonl \
-  --report_out benchmark/report_eval.json
-```
+- `scripts/run_eval.sbatch`
+- `scripts/run_glottolog_benchmark.sbatch`
 
-Metrics include:
-- accuracy (overall/high/low),
-- parsed rate,
-- high-confidence accuracy + coverage,
-- rationale quality rate (non-empty and <= 30 words),
-- calibration (`brier_on_correctness`, `ece_10bin`).
+## What Is Not Fully Standardized
 
-The evaluator reports both:
-- `normalized`: metrics on normalized prediction fields (`value/confidence/rationale`).
-- `strict_raw`: metrics parsed directly from model raw text in `output`.
+The benchmark builder is not a fully stratified protocol in the stronger methodological sense:
 
-## 3b) Fit confidence calibration map
+- there is no `mrl` tier
+- feature-family balance is not explicitly enforced
+- family-balance or family-exclusion constraints are not explicitly enforced
 
-```bash
-.venv/bin/python benchmark/fit_confidence_map.py \
-  --gold benchmark/gold_eval.jsonl \
-  --pred benchmark/predictions_eval.jsonl \
-  --mode normalized \
-  --out benchmark/confidence_map.json
-```
+So direct comparisons across reported benchmark runs are valid because they use one frozen gold file, but the benchmark should not be described as fully standardized across HRL/MRL/LRL tiers and feature/family strata.
 
-Then re-evaluate with calibrated confidence:
+## Benchmark Results Snapshot
 
-```bash
-.venv/bin/python benchmark/evaluate_benchmark.py \
-  --gold benchmark/gold_eval.jsonl \
-  --pred benchmark/predictions_eval.jsonl \
-  --confidence_map benchmark/confidence_map.json \
-  --report_out benchmark/report_eval_calibrated.json
-```
+Representative results on the frozen benchmark `data/benchmark/gold_eval_2.jsonl` are:
 
-No-leakage option (fit on train split, evaluate on held-out split):
+| Method | Overall Acc | Overall F1 | High Acc | Low Acc |
+|---|---:|---:|---:|---:|
+| Mean | 78.65 | 67.24 | 81.20 | 72.75 |
+| kNN | 83.18 | 74.44 | 88.80 | 70.21 |
+| SoftImpute | 85.35 | 78.40 | 90.80 | 72.75 |
+| Legacy prompt / RAG-style (`v4_8b`) | 82.83 | 76.21 | 83.10 | 82.22 |
+| `kg_flat` | 79.69 | 73.03 | 80.00 | 78.98 |
+| `hybrid_flat_kg_fixed` | 82.14 | 75.57 | 82.40 | 81.52 |
+| `kg_typed_fixed` | 90.93 | 87.45 | 89.60 | 94.00 |
+| `compact_fixed` | 91.21 | 87.77 | 89.90 | 94.23 |
+| `kg_typed_contrastive_fixed` | **91.49** | **88.13** | **90.20** | **94.46** |
 
-```bash
-.venv/bin/python benchmark/split_calibration_eval.py \
-  --gold benchmark/gold_eval.jsonl \
-  --pred benchmark/predictions_eval.jsonl \
-  --mode normalized \
-  --split_by language \
-  --test_frac 0.2 \
-  --seed 7 \
-  --out benchmark/split_calibration_report.json
-```
+Interpretation:
 
-## 3c) Per-feature error analysis
+- the strongest classical baseline here is SoftImpute
+- the strongest legacy prompt baseline is `v4_8b`
+- the strongest KG variant is `kg_typed_contrastive_fixed`
+- the main empirical jump comes from typed, feature-conditioned, contrastive retrieval rather than from graph storage alone
 
-```bash
-.venv/bin/python benchmark/feature_error_analysis.py \
-  --gold benchmark/gold_eval.jsonl \
-  --pred benchmark/predictions_eval.jsonl \
-  --mode normalized \
-  --min_n 10 \
-  --out benchmark/feature_errors.json
-```
+Short note on KG variant differences:
 
-## 4) Run all-missing evaluation prompts on GPU
+- `kg_flat`: baseline-preserving KG implementation of the old flat retrieval logic
+- `hybrid_flat_kg_fixed`: legacy flat retrieval as the backbone, with KG evidence added as augmentation
+- `kg_typed_fixed`: typed, feature-conditioned KG reranking using relation type, distance, and feature overlap signals
+- `compact_fixed`: same typed KG retrieval family, but with a more compact graph serialization in the prompt
+- `kg_typed_contrastive_fixed`: typed KG retrieval plus explicit contrastive support for both competing values
 
-This runs inference over all currently missing features for the evaluation languages (high/low split).
+## Rebuilding
 
-```bash
-.venv/bin/python benchmark/eval_prompting.py \
-  --prompting_py code/prompting.py \
-  --typ output/uriel+_typological.csv \
-  --meta output/metadata.csv \
-  --topk_csv out_corr/topk_per_feature.csv \
-  --gen output/genetic_neighbours.json \
-  --geo output/geographic_neighbours.json \
-  --groups_json benchmark/language_groups.json \
-  --model meta-llama/Llama-3.2-3B-Instruct \
-  --device cuda \
-  --batch_size 4 \
-  --max_new_tokens 96 \
-  --prompts_out benchmark/eval_missing_prompts.jsonl \
-  --pred_out benchmark/eval_missing_predictions.jsonl
-```
+`benchmark/build_benchmark.py` can generate a new benchmark snapshot. Its default output names now use the `_2` suffix to match the checked-in frozen artifact naming convention.
+
+If you regenerate these files, treat the result as a new benchmark snapshot unless you intentionally replace the frozen files.

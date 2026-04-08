@@ -19,18 +19,22 @@ Notes:
 
 ## Produce canonical examples
 
-`build_benchmark.py` now emits:
-- `benchmark/examples_eval.jsonl`
-- `benchmark/examples_eval_high.jsonl`
-- `benchmark/examples_eval_low.jsonl`
+`build_benchmark.py` now defaults to the frozen `_2` benchmark artifact names:
+- `data/benchmark/examples_eval_2.jsonl`
+- `data/benchmark/examples_eval_high_2.jsonl`
+- `data/benchmark/examples_eval_low_2.jsonl`
+
+The checked-in frozen benchmark used for reported comparisons is:
+- `data/benchmark/gold_eval_2.jsonl`
+- `data/benchmark/language_groups_2.json`
 
 ## Convert existing prompt/gold files
 
 ```bash
 .venv/bin/python benchmark/convert_prompt_gold_to_examples.py \
-  --prompts benchmark/prompts_eval_2.jsonl \
-  --gold benchmark/gold_eval_2.jsonl \
-  --out benchmark/examples_eval_2.jsonl
+  --prompts data/benchmark/prompts_eval_2.jsonl \
+  --gold data/benchmark/gold_eval_2.jsonl \
+  --out data/benchmark/examples_eval_2.jsonl
 ```
 
 ## Inference compatibility

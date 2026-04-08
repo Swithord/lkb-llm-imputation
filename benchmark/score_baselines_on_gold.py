@@ -143,9 +143,9 @@ def _records_from_run_result(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Score baselines directly on benchmark gold IDs for apples-to-apples fairness.")
-    p.add_argument("--typology_csv", type=str, default="output/uriel+_typological.csv")
-    p.add_argument("--gold", type=str, default="benchmark/gold_eval_2.jsonl")
-    p.add_argument("--out_dir", type=str, default="prediction/benchmark")
+    p.add_argument("--typology_csv", type=str, default="data/derived/uriel+_typological.csv")
+    p.add_argument("--gold", type=str, default="data/benchmark/gold_eval_2.jsonl")
+    p.add_argument("--out_dir", type=str, default="artifacts/prediction/benchmark")
     p.add_argument("--knn_k", type=int, default=11)
     p.add_argument("--knn_metric", type=str, default="cosine", choices=["cosine", "jaccard"])
     p.add_argument("--seed", type=int, default=42)
@@ -166,7 +166,7 @@ def main() -> None:
         choices=["fixed", "feature_prevalence", "global_prevalence"],
     )
     p.add_argument("--softimpute_decision_threshold", type=float, default=0.5)
-    p.add_argument("--report_out", type=str, default="prediction/benchmark/report_baselines_on_gold_eval_2.json")
+    p.add_argument("--report_out", type=str, default="artifacts/prediction/benchmark/report_baselines_on_gold_eval_2.json")
     args = p.parse_args()
 
     typology_df = pd.read_csv(args.typology_csv, index_col=0)

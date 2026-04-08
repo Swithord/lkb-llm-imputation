@@ -13,6 +13,9 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+BENCHMARK_DIR = ROOT / "benchmark"
+if str(BENCHMARK_DIR) not in sys.path:
+    sys.path.insert(0, str(BENCHMARK_DIR))
 
 from eval_metrics import compute_binary_metrics
 
@@ -278,15 +281,15 @@ def _parse_k_values(raw: str) -> list[int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run random/mean/kNN baselines with split-aware evaluation.")
-    parser.add_argument("--typology_csv", type=str, default="output/uriel+_typological.csv")
-    parser.add_argument("--splits_json", type=str, default="splits_v1.json")
-    parser.add_argument("--mask", type=str, default="mask_mcar20_seed42.npy")
-    parser.add_argument("--groups_json", type=str, default="benchmark/language_groups_2.json")
+    parser.add_argument("--typology_csv", type=str, default="data/derived/uriel+_typological.csv")
+    parser.add_argument("--splits_json", type=str, default="data/splits/splits_v1.json")
+    parser.add_argument("--mask", type=str, default="data/splits/mask_mcar20_seed42.npy")
+    parser.add_argument("--groups_json", type=str, default="data/benchmark/language_groups_2.json")
     parser.add_argument("--k_values", type=str, default="1,3,5,7,11,21")
     parser.add_argument("--knn_metric", type=str, default="cosine", choices=["cosine", "jaccard"])
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out_dir", type=str, default="baseline")
-    parser.add_argument("--report_out", type=str, default="report_baselines_v1.json")
+    parser.add_argument("--out_dir", type=str, default="artifacts/baseline")
+    parser.add_argument("--report_out", type=str, default="artifacts/reports/report_baselines_v1.json")
     args = parser.parse_args()
 
     typology_df = pd.read_csv(args.typology_csv, index_col=0)

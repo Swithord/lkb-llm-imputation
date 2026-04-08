@@ -318,12 +318,12 @@ def _build_topk_map(df: pd.DataFrame) -> Dict[str, List[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build typed KG node/edge JSONL files for Glottolog-grounded retrieval.")
-    parser.add_argument("--typ", type=str, default="output/uriel+_typological.csv")
-    parser.add_argument("--meta", type=str, default="output/metadata.csv")
-    parser.add_argument("--geo", type=str, default="output/geographic_neighbours.json")
-    parser.add_argument("--gen", type=str, default="output/genetic_neighbours.json")
-    parser.add_argument("--gen_detail", type=str, default="output/genetic_neighbours_detailed.json")
-    parser.add_argument("--topk", type=str, default="out_corr/topk_per_feature.csv")
+    parser.add_argument("--typ", type=str, default="data/derived/uriel+_typological.csv")
+    parser.add_argument("--meta", type=str, default="data/derived/metadata.csv")
+    parser.add_argument("--geo", type=str, default="data/derived/geographic_neighbours.json")
+    parser.add_argument("--gen", type=str, default="data/derived/genetic_neighbours.json")
+    parser.add_argument("--gen_detail", type=str, default="data/derived/genetic_neighbours_detailed.json")
+    parser.add_argument("--topk", type=str, default="data/features/topk_per_feature.csv")
     parser.add_argument("--glottolog_root", type=str, default="glottolog")
     parser.add_argument("--nodes_out", type=str, default="glottolog-tree/kg_nodes.jsonl")
     parser.add_argument("--edges_out", type=str, default="glottolog-tree/kg_edges.jsonl")

@@ -20,6 +20,9 @@ except Exception:
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+BENCHMARK_DIR = ROOT / "benchmark"
+if str(BENCHMARK_DIR) not in sys.path:
+    sys.path.insert(0, str(BENCHMARK_DIR))
 
 from eval_metrics import compute_binary_metrics
 
@@ -312,13 +315,13 @@ def _build_records_for_mask(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run SoftImpute baseline with masked-entry evaluation.")
-    parser.add_argument("--typology_csv", type=str, default="output/uriel+_typological.csv")
-    parser.add_argument("--splits_json", type=str, default="splits_v1.json")
-    parser.add_argument("--mask", type=str, default="mask_mcar20_seed42.npy")
-    parser.add_argument("--groups_json", type=str, default="benchmark/language_groups_2.json")
-    parser.add_argument("--out_dir", type=str, default="baseline")
-    parser.add_argument("--pred_out", type=str, default="baseline/predictions_baseline_softimpute.jsonl")
-    parser.add_argument("--metrics_out", type=str, default="baseline/metrics_baseline_softimpute.json")
+    parser.add_argument("--typology_csv", type=str, default="data/derived/uriel+_typological.csv")
+    parser.add_argument("--splits_json", type=str, default="data/splits/splits_v1.json")
+    parser.add_argument("--mask", type=str, default="data/splits/mask_mcar20_seed42.npy")
+    parser.add_argument("--groups_json", type=str, default="data/benchmark/language_groups_2.json")
+    parser.add_argument("--out_dir", type=str, default="artifacts/baseline")
+    parser.add_argument("--pred_out", type=str, default="artifacts/baseline/predictions_baseline_softimpute.jsonl")
+    parser.add_argument("--metrics_out", type=str, default="artifacts/baseline/metrics_baseline_softimpute.json")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max_rank", type=int, default=64)
     parser.add_argument("--max_iters", type=int, default=100)

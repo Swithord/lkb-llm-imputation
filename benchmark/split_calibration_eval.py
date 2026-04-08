@@ -232,7 +232,7 @@ def main() -> None:
     p.add_argument("--split_by", type=str, default="language", choices=["language", "item"])
     p.add_argument("--test_frac", type=float, default=0.2)
     p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--out", type=str, default="benchmark/split_calibration_report.json")
+    p.add_argument("--out", type=str, default="artifacts/benchmark/split_calibration_report.json")
     args = p.parse_args()
 
     gold = load_gold_jsonl(args.gold)

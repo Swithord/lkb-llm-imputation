@@ -610,7 +610,7 @@ def analyze_resource_splits(
     typology_csv: str,
     gold_path: str,
     model_paths: dict[str, str],
-    metadata_csv: str = "output/metadata.csv",
+    metadata_csv: str = "data/derived/metadata.csv",
     confidence_map: dict[str, float] | None = None,
     focus_model: str | None = None,
 ) -> dict[str, Any]:
@@ -751,9 +751,9 @@ def _build_stdout_summary(report: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Recompute multiple resource splits on existing benchmark predictions.")
-    parser.add_argument("--typology_csv", type=str, default="output/uriel+_typological.csv")
-    parser.add_argument("--metadata_csv", type=str, default="output/metadata.csv")
-    parser.add_argument("--gold", type=str, default="benchmark/gold_eval_2.jsonl")
+    parser.add_argument("--typology_csv", type=str, default="data/derived/uriel+_typological.csv")
+    parser.add_argument("--metadata_csv", type=str, default="data/derived/metadata.csv")
+    parser.add_argument("--gold", type=str, default="data/benchmark/gold_eval_2.jsonl")
     parser.add_argument(
         "--model",
         action="append",

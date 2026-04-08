@@ -30,7 +30,7 @@ def main() -> None:
     p.add_argument("--v3_no_vote_report", type=str, required=True)
     p.add_argument("--v3_vote_report", type=str, required=True)
     p.add_argument("--prompt_version", type=str, default="unknown_prompt")
-    p.add_argument("--out", type=str, default="report_prompt_v3.json")
+    p.add_argument("--out", type=str, default="artifacts/reports/report_prompt_v3.json")
     args = p.parse_args()
 
     baseline = _extract_metrics(_load(args.baseline_report))

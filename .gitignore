@@ -1,32 +1,27 @@
 .DS_Store
+.coverage
+.hf_cache/
+.ipynb_checkpoints/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 .venv/
 .venv311/
 __pycache__/
-code/__pycache__/
+**/__pycache__/
 *.py[cod]
 
 # Prevent re-adding oversized generated artifacts.
-out_corr/X.npy
-output/all_missing_prompts.jsonl
-output/missing_prompts_with_neighbor_fallback.jsonl
+data/features/X.npy
+data/derived/all_missing_prompts.jsonl
+data/derived/missing_prompts_with_neighbor_fallback.jsonl
+data/derived/genetic_neighbours_detailed.json
+glottolog-tree/kg_nodes.jsonl
+glottolog-tree/kg_edges.jsonl
 
-# Large external dataset directory kept locally only.
-|
-
-# Local HF cache
-.hf_cache/
-
-# Local throwaway tiny models used for offline speed probes
+# Local throwaway tiny models used for offline speed probes.
 benchmark/local_tiny_streamA_model/
 benchmark/local_tiny_streamA_model8k/
 
-# Generated run artifacts
-baseline/
-benchmark/speed_probe_predictions.jsonl
-benchmark/prompts_eval_v3_*.jsonl
-benchmark/predictions_eval_v3_*.jsonl
-benchmark/report_eval_v3_*.json
-benchmark/report_eval_baseline_from_existing.json
-report_prompt_v3.json
-report_baselines_v1.json
-speed_report.json
+# Generated run artifacts.
+artifacts/

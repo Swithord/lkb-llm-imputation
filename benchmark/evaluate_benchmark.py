@@ -237,7 +237,7 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Evaluate benchmark predictions with confidence/rationale checks.")
-    p.add_argument("--gold", type=str, default="benchmark/gold_eval.jsonl")
+    p.add_argument("--gold", type=str, default="data/benchmark/gold_eval_2.jsonl")
     p.add_argument("--pred", type=str, required=True, help="JSONL with `id` and either (`value`,`confidence`,`rationale`) or `output`.")
     p.add_argument("--confidence_map", type=str, default=None, help="Optional JSON file mapping low/medium/high to probability.")
     p.add_argument("--report_out", type=str, default=None, help="Optional JSON report path.")

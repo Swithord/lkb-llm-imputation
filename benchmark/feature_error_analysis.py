@@ -50,7 +50,7 @@ def main() -> None:
     p.add_argument("--pred", type=str, required=True)
     p.add_argument("--mode", type=str, default="normalized", choices=["normalized", "strict_raw"])
     p.add_argument("--min_n", type=int, default=10)
-    p.add_argument("--out", type=str, default="benchmark/feature_errors.json")
+    p.add_argument("--out", type=str, default="artifacts/benchmark/feature_errors.json")
     args = p.parse_args()
 
     gold = load_gold_jsonl(args.gold)

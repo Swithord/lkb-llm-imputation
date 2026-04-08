@@ -660,7 +660,7 @@ def main() -> None:
     p.add_argument("--meta", type=str, required=True, help="Metadata CSV (glottocode index).")
     p.add_argument("--topk_csv", type=str, required=True, help="CSV from select_topk_features.py.")
     p.add_argument("--gen", type=str, required=True, help="Genetic neighbours JSON.")
-    p.add_argument("--gen_detail", type=str, default="output/genetic_neighbours_detailed.json")
+    p.add_argument("--gen_detail", type=str, default="data/derived/genetic_neighbours_detailed.json")
     p.add_argument("--geo", type=str, required=True, help="Geographic neighbours JSON.")
     p.add_argument(
         "--retrieval_backend",
