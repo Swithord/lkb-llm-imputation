@@ -1,0 +1,17 @@
+# Tested user-space dependencies for this repo on the shared cluster.
+# Install with:
+#   python -m venv .venv
+#   source .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# Torch is intentionally not pinned here because the correct wheel depends on
+# the cluster CUDA stack. Install the torch build your cluster supports after
+# installing this file.
+
+numpy==1.26.4
+pandas==3.0.0
+pyglottolog==3.16.0
+pytest==9.0.2
+scikit-learn==1.8.0
+transformers==5.1.0
+urielplus==1.1
