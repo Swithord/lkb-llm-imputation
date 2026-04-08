@@ -1,0 +1,14 @@
+{
+  "name": "mcar_20",
+  "typology_csv": "data/derived/uriel+_typological.csv",
+  "mask_file": "data/splits/mask_mcar20_seed42.npy",
+  "mask_seed": 42,
+  "mask_rate": 0.2,
+  "shape": [
+    7989,
+    289
+  ],
+  "n_observed_entries": 411240,
+  "n_masked_entries": 82248,
+  "masked_fraction_of_observed": 0.2
+}

@@ -1,0 +1,27 @@
+.DS_Store
+.coverage
+.hf_cache/
+.ipynb_checkpoints/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.venv311/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Prevent re-adding oversized generated artifacts.
+data/features/X.npy
+data/derived/all_missing_prompts.jsonl
+data/derived/missing_prompts_with_neighbor_fallback.jsonl
+data/derived/genetic_neighbours_detailed.json
+glottolog-tree/kg_nodes.jsonl
+glottolog-tree/kg_edges.jsonl
+
+# Local throwaway tiny models used for offline speed probes.
+benchmark/local_tiny_streamA_model/
+benchmark/local_tiny_streamA_model8k/
+
+# Generated run artifacts.
+artifacts/

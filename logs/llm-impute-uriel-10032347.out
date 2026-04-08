@@ -1,0 +1,540 @@
+PWD: /project/6102153/vivianqw/lkb-llm-imputation
+HOST: g10.nibi.sharcnet
+which python: /home/vivianqw/venv/bin/python
+Python 3.11.5
+pandas ok
+torch ok
+Sun Mar  8 14:54:38 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:BB:00.0 Off |                    0 |
+| N/A   31C    P0             71W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Wrote prompts: prediction/benchmark/prompts_eval_v3_strict_json_novote.jsonl
+Num prompts: 1433
+Prompt version: v3_strict_json
+Include vote table: False
+Wrote prompts: prediction/benchmark/prompts_eval_v3_strict_json_vote.jsonl
+Num prompts: 1433
+Prompt version: v3_strict_json
+Include vote table: True
+Wrote predictions: prediction/benchmark/predictions_eval_v3_strict_json_novote.jsonl
+Num prompts: 1433
+Wrote predictions: prediction/benchmark/predictions_eval_v3_strict_json_vote.jsonl
+Num prompts: 1433
+{
+  "confidence_map": {
+    "low": 0.33,
+    "medium": 0.66,
+    "high": 0.9
+  },
+  "normalized": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.6566643405443127,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6583897667419112,
+        "high_conf_coverage": 0.9274249825540823,
+        "rationale_ok_rate": 1.0
+      },
+      "high": {
+        "accuracy": 0.69,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6878363832077503,
+        "high_conf_coverage": 0.929,
+        "rationale_ok_rate": 1.0
+      },
+      "low": {
+        "accuracy": 0.5796766743648961,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.59,
+        "high_conf_coverage": 0.9237875288683602,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.2858262386601511,
+      "ece_10bin": 0.2457222609909277,
+      "n_with_valid_confidence": 1433
+    }
+  },
+  "strict_raw": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.6147941381716678,
+        "parsed_rate": 0.9427773900907188,
+        "high_conf_accuracy": 0.6846846846846847,
+        "high_conf_coverage": 0.8520586182833217,
+        "rationale_ok_rate": 0.9427773900907188
+      },
+      "high": {
+        "accuracy": 0.639,
+        "parsed_rate": 0.931,
+        "high_conf_accuracy": 0.7022727272727273,
+        "high_conf_coverage": 0.88,
+        "rationale_ok_rate": 0.931
+      },
+      "low": {
+        "accuracy": 0.558891454965358,
+        "parsed_rate": 0.9699769053117783,
+        "high_conf_accuracy": 0.6392961876832844,
+        "high_conf_coverage": 0.7875288683602771,
+        "rationale_ok_rate": 0.9699769053117783
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.2623358253145799,
+      "ece_10bin": 0.20794226498888926,
+      "n_with_valid_confidence": 1351
+    }
+  },
+  "legacy": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.6566643405443127,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6583897667419112,
+        "high_conf_coverage": 0.9274249825540823,
+        "rationale_ok_rate": 1.0
+      },
+      "high": {
+        "accuracy": 0.69,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6878363832077503,
+        "high_conf_coverage": 0.929,
+        "rationale_ok_rate": 1.0
+      },
+      "low": {
+        "accuracy": 0.5796766743648961,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.59,
+        "high_conf_coverage": 0.9237875288683602,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.2858262386601511,
+      "ece_10bin": 0.2457222609909277,
+      "n_with_valid_confidence": 1433
+    }
+  }
+}
+{
+  "confidence_map": {
+    "low": 0.33,
+    "medium": 0.66,
+    "high": 0.9
+  },
+  "normalized": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.6573621772505234,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6605571847507331,
+        "high_conf_coverage": 0.9518492672714585,
+        "rationale_ok_rate": 1.0
+      },
+      "high": {
+        "accuracy": 0.69,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6921465968586388,
+        "high_conf_coverage": 0.955,
+        "rationale_ok_rate": 1.0
+      },
+      "low": {
+        "accuracy": 0.581986143187067,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.58679706601467,
+        "high_conf_coverage": 0.9445727482678984,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.2827314724354477,
+      "ece_10bin": 0.2399441730635049,
+      "n_with_valid_confidence": 1433
+    }
+  },
+  "strict_raw": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.6343335659455688,
+        "parsed_rate": 0.9616189811584089,
+        "high_conf_accuracy": 0.667447306791569,
+        "high_conf_coverage": 0.8939288206559665,
+        "rationale_ok_rate": 0.9609211444521982
+      },
+      "high": {
+        "accuracy": 0.662,
+        "parsed_rate": 0.957,
+        "high_conf_accuracy": 0.6970362239297475,
+        "high_conf_coverage": 0.911,
+        "rationale_ok_rate": 0.956
+      },
+      "low": {
+        "accuracy": 0.5704387990762124,
+        "parsed_rate": 0.9722863741339491,
+        "high_conf_accuracy": 0.5945945945945946,
+        "high_conf_coverage": 0.8545034642032333,
+        "rationale_ok_rate": 0.9722863741339491
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.27829724238025905,
+      "ece_10bin": 0.23425253991291367,
+      "n_with_valid_confidence": 1378
+    }
+  },
+  "legacy": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.6573621772505234,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6605571847507331,
+        "high_conf_coverage": 0.9518492672714585,
+        "rationale_ok_rate": 1.0
+      },
+      "high": {
+        "accuracy": 0.69,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.6921465968586388,
+        "high_conf_coverage": 0.955,
+        "rationale_ok_rate": 1.0
+      },
+      "low": {
+        "accuracy": 0.581986143187067,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.58679706601467,
+        "high_conf_coverage": 0.9445727482678984,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.2827314724354477,
+      "ece_10bin": 0.2399441730635049,
+      "n_with_valid_confidence": 1433
+    }
+  }
+}
+{
+  "confidence_map": {
+    "low": 0.33,
+    "medium": 0.66,
+    "high": 0.9
+  },
+  "normalized": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.7773900907187719,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.8092691622103387,
+        "high_conf_coverage": 0.39148639218422887,
+        "rationale_ok_rate": 1.0
+      },
+      "high": {
+        "accuracy": 0.789,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.8401937046004843,
+        "high_conf_coverage": 0.413,
+        "rationale_ok_rate": 1.0
+      },
+      "low": {
+        "accuracy": 0.7505773672055427,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.722972972972973,
+        "high_conf_coverage": 0.3418013856812933,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.28627878576412796,
+      "ece_10bin": 0.29505233775296025,
+      "n_with_valid_confidence": 1433
+    }
+  },
+  "strict_raw": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.4605722260990928,
+        "parsed_rate": 0.5994417306350314,
+        "high_conf_accuracy": 0.812111801242236,
+        "high_conf_coverage": 0.4494068387997209,
+        "rationale_ok_rate": 0.5575715282623867
+      },
+      "high": {
+        "accuracy": 0.433,
+        "parsed_rate": 0.557,
+        "high_conf_accuracy": 0.8436724565756824,
+        "high_conf_coverage": 0.403,
+        "rationale_ok_rate": 0.545
+      },
+      "low": {
+        "accuracy": 0.5242494226327945,
+        "parsed_rate": 0.6974595842956121,
+        "high_conf_accuracy": 0.7593360995850622,
+        "high_conf_coverage": 0.5565819861431871,
+        "rationale_ok_rate": 0.5866050808314087
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.20086973224679866,
+      "ece_10bin": 0.14036088474970113,
+      "n_with_valid_confidence": 859
+    }
+  },
+  "legacy": {
+    "counts": {
+      "overall": {
+        "n": 1433
+      },
+      "high": {
+        "n": 1000
+      },
+      "low": {
+        "n": 433
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.7773900907187719,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.8092691622103387,
+        "high_conf_coverage": 0.39148639218422887,
+        "rationale_ok_rate": 1.0
+      },
+      "high": {
+        "accuracy": 0.789,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.8401937046004843,
+        "high_conf_coverage": 0.413,
+        "rationale_ok_rate": 1.0
+      },
+      "low": {
+        "accuracy": 0.7505773672055427,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.722972972972973,
+        "high_conf_coverage": 0.3418013856812933,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.28627878576412796,
+      "ece_10bin": 0.29505233775296025,
+      "n_with_valid_confidence": 1433
+    }
+  }
+}
+Wrote comparison report: prediction/benchmark/report_prompt_v3.json
+{
+  "prompt_version": "v3_strict_json",
+  "metrics": {
+    "baseline": {
+      "raw_parse_rate": 0.5994417306350314,
+      "raw_accuracy": 0.4605722260990928,
+      "normalized_accuracy": 0.7773900907187719
+    },
+    "v3_no_vote_table": {
+      "raw_parse_rate": 0.9427773900907188,
+      "raw_accuracy": 0.6147941381716678,
+      "normalized_accuracy": 0.6566643405443127
+    },
+    "v3_with_vote_table": {
+      "raw_parse_rate": 0.9616189811584089,
+      "raw_accuracy": 0.6343335659455688,
+      "normalized_accuracy": 0.6573621772505234
+    }
+  },
+  "raw_parse_compliance_improvement": {
+    "v3_no_vote_vs_baseline": {
+      "absolute": 0.34333565945568745,
+      "relative": 0.5727590221187429
+    },
+    "v3_vote_vs_baseline": {
+      "absolute": 0.36217725052337757,
+      "relative": 0.6041909196740397
+    },
+    "v3_vote_vs_no_vote": {
+      "absolute": 0.018841591067690122,
+      "relative": 0.019985196150999217
+    }
+  },
+  "comparison_vs_baseline": {
+    "v3_no_vote": {
+      "raw_parse_rate": {
+        "absolute": 0.34333565945568745,
+        "relative": 0.5727590221187429
+      },
+      "raw_accuracy": {
+        "absolute": 0.15422191207257502,
+        "relative": 0.33484848484848484
+      },
+      "normalized_accuracy": {
+        "absolute": -0.12072575017445919,
+        "relative": -0.15529622980251348
+      }
+    },
+    "v3_vote": {
+      "raw_parse_rate": {
+        "absolute": 0.36217725052337757,
+        "relative": 0.6041909196740397
+      },
+      "raw_accuracy": {
+        "absolute": 0.17376133984647596,
+        "relative": 0.37727272727272737
+      },
+      "normalized_accuracy": {
+        "absolute": -0.12002791346824848,
+        "relative": -0.1543985637342909
+      }
+    }
+  },
+  "ablation_vote_table_vs_no_vote_table": {
+    "raw_parse_rate": {
+      "absolute": 0.018841591067690122,
+      "relative": 0.019985196150999217
+    },
+    "raw_accuracy": {
+      "absolute": 0.01953942777390094,
+      "relative": 0.03178206583427928
+    },
+    "normalized_accuracy": {
+      "absolute": 0.0006978367062107083,
+      "relative": 0.0010626992561104621
+    }
+  }
+}
+Wrote speed report: prediction/benchmark/speed_report.json
+{
+  "status": "ok",
+  "input_jsonl": "prediction/benchmark/prompts_eval_v3_strict_json_vote.jsonl",
+  "model": "meta-llama/Llama-3.2-3B-Instruct",
+  "batch_size": 4,
+  "max_new_tokens": 64,
+  "n_examples_requested": 128,
+  "n_examples_measured": 128,
+  "target_examples": 82248,
+  "timing": {
+    "model_load_seconds": 2.5528254127129912,
+    "generation_seconds": 22.631990290246904,
+    "total_seconds": 39.49168101977557
+  },
+  "throughput": {
+    "prompts_per_sec": 5.6557111574566505,
+    "tokens_per_sec": 271.4741355579192,
+    "overall_prompts_per_sec": 3.2411889464999892,
+    "generated_tokens_total": 6144,
+    "avg_generated_tokens_per_prompt": 48.0
+  },
+  "dtype": "bfloat16",
+  "device": "cuda",
+  "gpu_model": "NVIDIA H100 80GB HBM3",
+  "gpu_total_memory_mb": 81079,
+  "scale_decision": {
+    "decision": "do_not_scale_now",
+    "reason": "Estimated full MCAR20 run exceeds ~1 hour on current setup.",
+    "estimated_seconds_for_target_examples": 14542.468260876776,
+    "estimated_hours_for_target_examples": 4.039574516910216
+  }
+}
