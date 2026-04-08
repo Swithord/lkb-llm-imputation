@@ -1,0 +1,2 @@
+glottolog-tree/kg_nodes.jsonl filter=lfs diff=lfs merge=lfs -text
+glottolog-tree/kg_edges.jsonl filter=lfs diff=lfs merge=lfs -text
