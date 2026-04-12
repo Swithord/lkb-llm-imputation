@@ -19,9 +19,11 @@ set -euo pipefail
 
 MODE="${MODE:-benchmark}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
-GOLD="${GOLD:-data/benchmark/gold_eval_2.jsonl}"
+BENCHMARK_VARIANT="${BENCHMARK_VARIANT:-frozen_v2}"   # frozen_v2 | coverage_resource_v1 | coverage_sparse_resource_v1 | coverage_bottomk200_equal2233_v1 | custom
+GOLD="${GOLD:-}"
 PROMPT_VERSION="${PROMPT_VERSION:-v5_glottolog_tree_json}"
 OUT_DIR="${OUT_DIR:-artifacts/prediction/benchmark_glottolog}"
+KG_RUN_MODES="${KG_RUN_MODES:-vote}"   # comma-separated: vote,novote
 GLOTTOLOG_PATH="${GLOTTOLOG_PATH:-$SLURM_SUBMIT_DIR/glottolog}"
 GEN_DETAIL="${GEN_DETAIL:-data/derived/genetic_neighbours_detailed.json}"
 KG_NODES="${KG_NODES:-glottolog-tree/kg_nodes.jsonl}"
@@ -36,8 +38,47 @@ BATCH_SIZE="${BATCH_SIZE:-4}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-64}"
 export GLOTTOLOG_PATH GEN_DETAIL KG_NODES KG_EDGES RETRIEVAL_BACKEND
 
+resolve_benchmark_gold() {
+  if [[ -n "$GOLD" ]]; then
+    return
+  fi
+
+  case "$BENCHMARK_VARIANT" in
+    frozen_v2)
+      GOLD="data/benchmark/gold_eval_2.jsonl"
+      ;;
+    coverage_resource_v1)
+      GOLD="data/benchmark/gold_eval_coverage_resource_v1.jsonl"
+      ;;
+    coverage_sparse_resource_v1)
+      GOLD="data/benchmark/gold_eval_coverage_sparse_resource_v1.jsonl"
+      ;;
+    coverage_bottomk200_equal2233_v1)
+      GOLD="data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl"
+      ;;
+    custom)
+      echo "BENCHMARK_VARIANT=custom requires GOLD to be set explicitly."
+      exit 1
+      ;;
+    *)
+      echo "Unknown BENCHMARK_VARIANT: $BENCHMARK_VARIANT"
+      exit 1
+      ;;
+  esac
+}
+
+mode_enabled() {
+  local mode="$1"
+  local csv="$2"
+  case ",$csv," in
+    *",$mode,"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p artifacts/logs "$OUT_DIR"
+resolve_benchmark_gold
 
 if [[ -n "$PYTHON_MODULE" ]]; then
   module load "$PYTHON_MODULE"
@@ -56,6 +97,9 @@ else
 fi
 
 python --version
+echo "Benchmark variant: $BENCHMARK_VARIANT"
+echo "Gold file: $GOLD"
+echo "KG run modes: $KG_RUN_MODES"
 nvidia-smi
 
 export HF_HOME="${SCRATCH:-/tmp}/hf"
@@ -165,67 +209,79 @@ run_benchmark() {
   local no_vote_report="$OUT_DIR/report_eval_${PROMPT_VERSION}_novote.json"
   local vote_report="$OUT_DIR/report_eval_${PROMPT_VERSION}_vote.json"
 
-  python benchmark/build_prompts_from_gold.py \
-    --prompting_py glottolog-tree/prompting.py \
-    --typ data/derived/uriel+_typological.csv \
-    --meta data/derived/metadata.csv \
-    --topk_csv data/features/topk_per_feature.csv \
-    --gen data/derived/genetic_neighbours.json \
-    --gen_detail "$GEN_DETAIL" \
-    --geo data/derived/geographic_neighbours.json \
-    --gold "$GOLD" \
-    --prompt_version "$PROMPT_VERSION" \
-    --no-include_vote_table \
-    --retrieval_backend "$RETRIEVAL_BACKEND" \
-    --kg_nodes "$KG_NODES" \
-    --kg_edges "$KG_EDGES" \
-    --out "$no_vote_prompts"
+  if mode_enabled "novote" "$KG_RUN_MODES"; then
+    python benchmark/build_prompts_from_gold.py \
+      --prompting_py glottolog-tree/prompting.py \
+      --typ data/derived/uriel+_typological.csv \
+      --meta data/derived/metadata.csv \
+      --topk_csv data/features/topk_per_feature.csv \
+      --gen data/derived/genetic_neighbours.json \
+      --gen_detail "$GEN_DETAIL" \
+      --geo data/derived/geographic_neighbours.json \
+      --gold "$GOLD" \
+      --prompt_version "$PROMPT_VERSION" \
+      --no-include_vote_table \
+      --retrieval_backend "$RETRIEVAL_BACKEND" \
+      --kg_nodes "$KG_NODES" \
+      --kg_edges "$KG_EDGES" \
+      --out "$no_vote_prompts"
+  fi
 
-  python benchmark/build_prompts_from_gold.py \
-    --prompting_py glottolog-tree/prompting.py \
-    --typ data/derived/uriel+_typological.csv \
-    --meta data/derived/metadata.csv \
-    --topk_csv data/features/topk_per_feature.csv \
-    --gen data/derived/genetic_neighbours.json \
-    --gen_detail "$GEN_DETAIL" \
-    --geo data/derived/geographic_neighbours.json \
-    --gold "$GOLD" \
-    --prompt_version "$PROMPT_VERSION" \
-    --include_vote_table \
-    --retrieval_backend "$RETRIEVAL_BACKEND" \
-    --kg_nodes "$KG_NODES" \
-    --kg_edges "$KG_EDGES" \
-    --out "$vote_prompts"
+  if mode_enabled "vote" "$KG_RUN_MODES"; then
+    python benchmark/build_prompts_from_gold.py \
+      --prompting_py glottolog-tree/prompting.py \
+      --typ data/derived/uriel+_typological.csv \
+      --meta data/derived/metadata.csv \
+      --topk_csv data/features/topk_per_feature.csv \
+      --gen data/derived/genetic_neighbours.json \
+      --gen_detail "$GEN_DETAIL" \
+      --geo data/derived/geographic_neighbours.json \
+      --gold "$GOLD" \
+      --prompt_version "$PROMPT_VERSION" \
+      --include_vote_table \
+      --retrieval_backend "$RETRIEVAL_BACKEND" \
+      --kg_nodes "$KG_NODES" \
+      --kg_edges "$KG_EDGES" \
+      --out "$vote_prompts"
+  fi
 
-  python benchmark/infer_from_prompts.py \
-    --in "$no_vote_prompts" \
-    --out "$no_vote_preds" \
-    --model "$MODEL" \
-    --device "$INFER_DEVICE" \
-    --batch_size "$BATCH_SIZE" \
-    --max_new_tokens "$MAX_NEW_TOKENS" \
-    --no-strengthen_json_contract \
-    --stop_at_closing_brace
+  if mode_enabled "novote" "$KG_RUN_MODES"; then
+    python benchmark/infer_from_prompts.py \
+      --in "$no_vote_prompts" \
+      --out "$no_vote_preds" \
+      --model "$MODEL" \
+      --device "$INFER_DEVICE" \
+      --batch_size "$BATCH_SIZE" \
+      --max_new_tokens "$MAX_NEW_TOKENS" \
+      --no-strengthen_json_contract \
+      --stop_at_closing_brace
+  fi
 
-  python benchmark/infer_from_prompts.py \
-    --in "$vote_prompts" \
-    --out "$vote_preds" \
-    --model "$MODEL" \
-    --device "$INFER_DEVICE" \
-    --batch_size "$BATCH_SIZE" \
-    --max_new_tokens "$MAX_NEW_TOKENS" \
-    --no-strengthen_json_contract \
-    --stop_at_closing_brace
+  if mode_enabled "vote" "$KG_RUN_MODES"; then
+    python benchmark/infer_from_prompts.py \
+      --in "$vote_prompts" \
+      --out "$vote_preds" \
+      --model "$MODEL" \
+      --device "$INFER_DEVICE" \
+      --batch_size "$BATCH_SIZE" \
+      --max_new_tokens "$MAX_NEW_TOKENS" \
+      --no-strengthen_json_contract \
+      --stop_at_closing_brace
+  fi
 
-  python benchmark/evaluate_benchmark.py \
-    --gold "$GOLD" \
-    --pred "$no_vote_preds" \
-    --report_out "$no_vote_report"
+  if mode_enabled "novote" "$KG_RUN_MODES"; then
+    python benchmark/evaluate_benchmark.py \
+      --gold "$GOLD" \
+      --pred "$no_vote_preds" \
+      --report_out "$no_vote_report"
+  fi
 
-  python benchmark/evaluate_benchmark.py \
-    --gold "$GOLD" \
-    --pred "$vote_preds" \
-    --report_out "$vote_report"
+  if mode_enabled "vote" "$KG_RUN_MODES"; then
+    python benchmark/evaluate_benchmark.py \
+      --gold "$GOLD" \
+      --pred "$vote_preds" \
+      --report_out "$vote_report"
+  fi
 }
 
 run_full() {
