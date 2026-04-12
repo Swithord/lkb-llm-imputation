@@ -159,6 +159,12 @@ _RELATION_PRIORITY = {
 }
 
 
+def _reference_values(graph, language: str, reference_observations: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    if reference_observations is None:
+        return graph.language_observations.get(str(language), {})
+    return {str(feature): str(value) for feature, value in reference_observations.items()}
+
+
 def _observed_value(graph, language: str, feature: str) -> Optional[str]:
     return graph.language_observations.get(str(language), {}).get(str(feature))
 
@@ -167,14 +173,11 @@ def _has_observed_value(graph, language: str, feature: str) -> bool:
     return _observed_value(graph, language, feature) is not None
 
 
-def _observed_feature_set(graph, language: str, features: Sequence[str]) -> set[str]:
-    observed = graph.language_observations.get(str(language), {})
+def _observed_feature_set_from_values(observed: Dict[str, str], features: Sequence[str]) -> set[str]:
     return {str(feature) for feature in features if str(feature) in observed}
 
 
-def _shared_feature_value_count(graph, reference_language: str, candidate_language: str, features: Sequence[str]) -> int:
-    reference = graph.language_observations.get(str(reference_language), {})
-    candidate = graph.language_observations.get(str(candidate_language), {})
+def _shared_feature_value_count(reference: Dict[str, str], candidate: Dict[str, str], features: Sequence[str]) -> int:
     score = 0
     for feature in features:
         feat = str(feature)
@@ -191,6 +194,7 @@ def _typed_phylo_score(
     target_feature: str,
     correlated: Sequence[str],
     original_rank: int,
+    reference_observations: Optional[Dict[str, str]] = None,
 ) -> tuple:
     relation_type = str(record.get("relation_type") or "phylogenetic_neighbor")
     tree_distance = _coerce_non_negative_int(record.get("tree_distance"), original_rank + 1)
@@ -205,11 +209,13 @@ def _typed_phylo_score(
         feature_targets.append(str(target_feature))
 
     has_target = 1 if _has_observed_value(graph, candidate_language, target_feature) else 0
-    ref_observed = _observed_feature_set(graph, reference_language, feature_targets)
-    cand_observed = _observed_feature_set(graph, candidate_language, feature_targets)
+    reference_values = _reference_values(graph, reference_language, reference_observations=reference_observations)
+    candidate_values = graph.language_observations.get(str(candidate_language), {})
+    ref_observed = _observed_feature_set_from_values(reference_values, feature_targets)
+    cand_observed = _observed_feature_set_from_values(candidate_values, feature_targets)
     anchor_overlap = len((cand_observed & ref_observed) - ({str(target_feature)}))
     new_coverage = len(cand_observed - ref_observed)
-    shared_values = _shared_feature_value_count(graph, reference_language, candidate_language, feature_targets)
+    shared_values = _shared_feature_value_count(reference_values, candidate_values, feature_targets)
     relation_priority = _RELATION_PRIORITY.get(relation_type, 1)
     fallback_penalty = 1 if relation_type == "phylogenetic_fallback" else 0
 
@@ -233,6 +239,7 @@ def ranked_phylo_records_typed(
     target_feature: str,
     correlated: Sequence[str],
     pool_limit: int = 400,
+    reference_observations: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, object]]:
     base_records = ranked_phylo_records(graph, language, pool_limit=pool_limit)
     scored: List[tuple[tuple, int, Dict[str, object]]] = []
@@ -246,6 +253,7 @@ def ranked_phylo_records_typed(
             target_feature=target_feature,
             correlated=correlated,
             original_rank=original_rank,
+            reference_observations=reference_observations,
         )
         scored.append((score, original_rank, record))
     scored.sort(key=lambda item: item[0], reverse=True)
@@ -258,6 +266,7 @@ def ranked_phylo_candidates_typed(
     target_feature: str,
     correlated: Sequence[str],
     pool_limit: int = 400,
+    reference_observations: Optional[Dict[str, str]] = None,
 ) -> List[str]:
     return [
         str(record["glottocode"])
@@ -267,6 +276,7 @@ def ranked_phylo_candidates_typed(
             target_feature=target_feature,
             correlated=correlated,
             pool_limit=pool_limit,
+            reference_observations=reference_observations,
         )
     ]
 
@@ -336,15 +346,18 @@ def _typed_geo_score(
     target_feature: str,
     correlated: Sequence[str],
     original_rank: int,
+    reference_observations: Optional[Dict[str, str]] = None,
 ) -> tuple:
     feature_targets = [str(feature) for feature in correlated if str(feature) != str(target_feature)]
     if str(target_feature) not in feature_targets:
         feature_targets.append(str(target_feature))
     has_target = 1 if _has_observed_value(graph, candidate_language, target_feature) else 0
-    ref_observed = _observed_feature_set(graph, reference_language, feature_targets)
-    cand_observed = _observed_feature_set(graph, candidate_language, feature_targets)
+    reference_values = _reference_values(graph, reference_language, reference_observations=reference_observations)
+    candidate_values = graph.language_observations.get(str(candidate_language), {})
+    ref_observed = _observed_feature_set_from_values(reference_values, feature_targets)
+    cand_observed = _observed_feature_set_from_values(candidate_values, feature_targets)
     anchor_overlap = len((cand_observed & ref_observed) - ({str(target_feature)}))
-    shared_values = _shared_feature_value_count(graph, reference_language, candidate_language, feature_targets)
+    shared_values = _shared_feature_value_count(reference_values, candidate_values, feature_targets)
     return (has_target, anchor_overlap, shared_values, -original_rank, str(candidate_language))
 
 
@@ -354,6 +367,7 @@ def ranked_geo_candidates_typed(
     target_feature: str,
     correlated: Sequence[str],
     pool_limit: int = 1200,
+    reference_observations: Optional[Dict[str, str]] = None,
 ) -> List[str]:
     base_candidates = ranked_geo_candidates(graph, language, pool_limit=pool_limit)
     scored: List[tuple[tuple, str]] = []
@@ -367,6 +381,7 @@ def ranked_geo_candidates_typed(
                     target_feature=target_feature,
                     correlated=correlated,
                     original_rank=original_rank,
+                    reference_observations=reference_observations,
                 ),
                 str(candidate_language),
             )

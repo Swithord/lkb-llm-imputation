@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from baselines.run_baselines import run_baseline
-from baselines.run_softimpute import _soft_impute_fit_transform
+from baselines.run_softimpute import _resolve_decision_thresholds, _soft_impute_probabilities
 from eval_metrics import compute_binary_metrics
 
 
@@ -153,6 +153,19 @@ def main() -> None:
     p.add_argument("--softimpute_max_iters", type=int, default=100)
     p.add_argument("--softimpute_convergence_threshold", type=float, default=1e-5)
     p.add_argument("--softimpute_shrinkage_value", type=float, default=None)
+    p.add_argument(
+        "--softimpute_input_transform",
+        type=str,
+        default="centered",
+        choices=["raw", "centered", "standardized"],
+    )
+    p.add_argument(
+        "--softimpute_threshold_mode",
+        type=str,
+        default="fixed",
+        choices=["fixed", "feature_prevalence", "global_prevalence"],
+    )
+    p.add_argument("--softimpute_decision_threshold", type=float, default=0.5)
     p.add_argument("--report_out", type=str, default="prediction/benchmark/report_baselines_on_gold_eval_2.json")
     args = p.parse_args()
 
@@ -222,12 +235,18 @@ def main() -> None:
 
     # SoftImpute on same eval IDs.
     train_matrix = np.where(train_mask, values, np.nan)
-    imputed = _soft_impute_fit_transform(
+    soft_thresholds, soft_global_train_positive_rate = _resolve_decision_thresholds(
+        train_matrix,
+        threshold_mode=args.softimpute_threshold_mode,
+        fixed_threshold=args.softimpute_decision_threshold,
+    )
+    imputed = _soft_impute_probabilities(
         train_matrix,
         max_rank=args.softimpute_max_rank,
         max_iters=args.softimpute_max_iters,
         convergence_threshold=args.softimpute_convergence_threshold,
         shrinkage_value=args.softimpute_shrinkage_value,
+        input_transform=args.softimpute_input_transform,
     )
     soft_rows: list[dict[str, Any]] = []
     soft_true: list[int] = []
@@ -237,7 +256,7 @@ def main() -> None:
         ri = row_idx[rec["language"]]
         ci = col_idx[rec["feature"]]
         p1 = float(np.clip(imputed[ri, ci], 0.0, 1.0))
-        pred = 1 if p1 >= 0.5 else 0
+        pred = 1 if p1 >= float(soft_thresholds[ci]) else 0
         prob_correct = p1 if pred == 1 else (1.0 - p1)
         conf = _prob_to_confidence(prob_correct)
         rationale = "softimpute baseline on gold_eval_2 ids"
@@ -283,6 +302,12 @@ def main() -> None:
             "knn_k": args.knn_k,
             "knn_metric": args.knn_metric,
             "seed": args.seed,
+            "softimpute_input_transform": args.softimpute_input_transform,
+            "softimpute_threshold_mode": args.softimpute_threshold_mode,
+            "softimpute_decision_threshold": (
+                args.softimpute_decision_threshold if args.softimpute_threshold_mode == "fixed" else None
+            ),
+            "softimpute_global_train_positive_rate": soft_global_train_positive_rate,
         },
         "predictions": {k: str(v) for k, v in pred_files.items()},
         "metrics_binary": {

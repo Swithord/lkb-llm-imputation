@@ -268,6 +268,7 @@ def _merge_candidate_lists(
 
 
 def _feature_conditioned_phylo_records(language: str, feature: str, correlated: Sequence[str], pool_limit: int = 400) -> List[Dict[str, object]]:
+    reference_observations = _current_language_observations(language)
     if RETRIEVAL_BACKEND in {"kg_typed", "kg_typed_contrastive"}:
         graph = _ensure_kg_graph()
         return _KG_RETRIEVAL.ranked_phylo_records_typed(
@@ -276,6 +277,7 @@ def _feature_conditioned_phylo_records(language: str, feature: str, correlated: 
             target_feature=feature,
             correlated=correlated,
             pool_limit=pool_limit,
+            reference_observations=reference_observations,
         )
     if RETRIEVAL_BACKEND == "hybrid_flat_kg":
         graph = _ensure_kg_graph()
@@ -286,12 +288,14 @@ def _feature_conditioned_phylo_records(language: str, feature: str, correlated: 
             target_feature=feature,
             correlated=correlated,
             pool_limit=min(pool_limit, 32),
+            reference_observations=reference_observations,
         )
         return _merge_record_lists(legacy_records, typed_records, pool_limit=pool_limit, preserve_prefix=2)
     return _ranked_phylo_records(language, pool_limit=pool_limit)
 
 
 def _feature_conditioned_geo_candidates(language: str, feature: str, correlated: Sequence[str], pool_limit: int = 1200) -> List[str]:
+    reference_observations = _current_language_observations(language)
     if RETRIEVAL_BACKEND in {"kg_typed", "kg_typed_contrastive"}:
         graph = _ensure_kg_graph()
         return _KG_RETRIEVAL.ranked_geo_candidates_typed(
@@ -300,6 +304,7 @@ def _feature_conditioned_geo_candidates(language: str, feature: str, correlated:
             target_feature=feature,
             correlated=correlated,
             pool_limit=pool_limit,
+            reference_observations=reference_observations,
         )
     if RETRIEVAL_BACKEND == "hybrid_flat_kg":
         graph = _ensure_kg_graph()
@@ -310,9 +315,22 @@ def _feature_conditioned_geo_candidates(language: str, feature: str, correlated:
             target_feature=feature,
             correlated=correlated,
             pool_limit=min(pool_limit, 32),
+            reference_observations=reference_observations,
         )
         return _merge_candidate_lists(legacy_candidates, typed_candidates, pool_limit=pool_limit, preserve_prefix=2)
     return _ranked_geo_candidates(language, pool_limit=pool_limit)
+
+
+def _current_language_observations(language: str) -> Dict[str, str]:
+    observations: Dict[str, str] = {}
+    if typ_df is None or language not in typ_df.index:
+        return observations
+    row = typ_df.loc[language]
+    for feature, value in row.items():
+        if _BASE._is_missing(value):
+            continue
+        observations[str(feature)] = _BASE._format_value(value)
+    return observations
 
 
 def _relation_label(value: object) -> str:

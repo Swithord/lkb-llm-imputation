@@ -6,7 +6,11 @@
     "protocol": "Train context uses all observed entries except the target gold_eval_2 IDs.",
     "knn_k": 11,
     "knn_metric": "cosine",
-    "seed": 42
+    "seed": 42,
+    "softimpute_input_transform": "centered",
+    "softimpute_threshold_mode": "fixed",
+    "softimpute_decision_threshold": 0.5,
+    "softimpute_global_train_positive_rate": 0.27456583220882025
   },
   "predictions": {
     "mean": "prediction/benchmark/predictions_baseline_mean_gold_eval_2.jsonl",
@@ -44,12 +48,12 @@
     },
     "softimpute": {
       "n": 1433.0,
-      "accuracy": 0.8046057222609909,
-      "precision": 0.8732394366197183,
-      "recall": 0.5040650406504065,
-      "f1": 0.6391752577319587,
-      "brier": 0.1777717235932973,
-      "ece": 0.14603084529672147
+      "accuracy": 0.8534542916957432,
+      "precision": 0.79375,
+      "recall": 0.774390243902439,
+      "f1": 0.7839506172839505,
+      "brier": 0.10557464376774078,
+      "ece": 0.046521734590059
     }
   },
   "hr_lr_breakdown_binary": {
@@ -116,21 +120,21 @@
     "softimpute": {
       "high": {
         "n": 1000.0,
-        "accuracy": 0.902,
-        "precision": 0.8732394366197183,
-        "recall": 0.8,
-        "f1": 0.835016835016835,
-        "brier": 0.07274687990919503,
-        "ece": 0.027262201310201822
+        "accuracy": 0.908,
+        "precision": 0.8585526315789473,
+        "recall": 0.8419354838709677,
+        "f1": 0.8501628664495113,
+        "brier": 0.07869463248240811,
+        "ece": 0.0498488170798165
       },
       "low": {
         "n": 433.0,
-        "accuracy": 0.5796766743648961,
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "brier": 0.42032332563510394,
-        "ece": 0.42032332563510394
+        "accuracy": 0.7274826789838337,
+        "precision": 0.6818181818181818,
+        "recall": 0.6593406593406593,
+        "f1": 0.6703910614525139,
+        "brier": 0.1676531917708186,
+        "ece": 0.04226168306715566
       }
     }
   }
