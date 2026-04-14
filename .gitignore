@@ -16,8 +16,10 @@ data/features/X.npy
 data/derived/all_missing_prompts.jsonl
 data/derived/missing_prompts_with_neighbor_fallback.jsonl
 data/derived/genetic_neighbours_detailed.json
+# Legacy local KG outputs (now written under artifacts/resources by default).
 glottolog-tree/kg_nodes.jsonl
 glottolog-tree/kg_edges.jsonl
+glottolog-tree/kg_*.jsonl
 
 # Local throwaway tiny models used for offline speed probes.
 benchmark/local_tiny_streamA_model/

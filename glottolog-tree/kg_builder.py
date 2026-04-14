@@ -325,8 +325,8 @@ def main() -> None:
     parser.add_argument("--gen_detail", type=str, default="data/derived/genetic_neighbours_detailed.json")
     parser.add_argument("--topk", type=str, default="data/features/topk_per_feature.csv")
     parser.add_argument("--glottolog_root", type=str, default="glottolog")
-    parser.add_argument("--nodes_out", type=str, default="glottolog-tree/kg_nodes.jsonl")
-    parser.add_argument("--edges_out", type=str, default="glottolog-tree/kg_edges.jsonl")
+    parser.add_argument("--nodes_out", type=str, default="artifacts/resources/kg_nodes.jsonl")
+    parser.add_argument("--edges_out", type=str, default="artifacts/resources/kg_edges.jsonl")
     args = parser.parse_args()
 
     typ_df = pd.read_csv(args.typ, index_col=0)
