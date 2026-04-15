@@ -1,17 +1,17 @@
 #!/bin/bash
 # Cluster defaults in this script match the lab's current setup:
 # - account: rrg-annielee
-# - GPU:     h100:1
+# - GPU:     h100_3g.40gb:1
 # - modules: python + cuda
 # Override Slurm resources at submit time, e.g.
-#   sbatch --account=<acct> --gres=gpu:a100:1 --mem=80G scripts/run_glottolog_benchmark.sbatch
+#   sbatch --account=<acct> --gpus=a100:1 --mem=80G scripts/run_glottolog_benchmark.sbatch
 #SBATCH --job-name=glottolog-benchmark
 #SBATCH --account=rrg-annielee
-#SBATCH --time=06:00:00
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gpus=h100_3g.40gb:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=40G
 #SBATCH --output=artifacts/logs/%x-%j.out
 #SBATCH --error=artifacts/logs/%x-%j.err
 
@@ -26,8 +26,8 @@ OUT_DIR="${OUT_DIR:-artifacts/prediction/benchmark_glottolog}"
 KG_RUN_MODES="${KG_RUN_MODES:-vote}"   # comma-separated: vote,novote
 GLOTTOLOG_PATH="${GLOTTOLOG_PATH:-$SLURM_SUBMIT_DIR/glottolog}"
 GEN_DETAIL="${GEN_DETAIL:-data/derived/genetic_neighbours_detailed.json}"
-KG_NODES="${KG_NODES:-glottolog-tree/kg_nodes.jsonl}"
-KG_EDGES="${KG_EDGES:-glottolog-tree/kg_edges.jsonl}"
+KG_NODES="${KG_NODES:-artifacts/resources/kg_nodes.jsonl}"
+KG_EDGES="${KG_EDGES:-artifacts/resources/kg_edges.jsonl}"
 RETRIEVAL_BACKEND="${RETRIEVAL_BACKEND:-kg_flat}"
 PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"

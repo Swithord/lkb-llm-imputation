@@ -1,17 +1,17 @@
 #!/bin/bash
 # Cluster defaults in this script match the lab's current setup:
 # - account: rrg-annielee
-# - GPU:     h100:1
+# - GPU:     h100_3g.40gb:1
 # - modules: python + cuda
 # Override Slurm resources at submit time, e.g.
-#   sbatch --account=<acct> --gres=gpu:a100:1 --mem=80G scripts/run_eval.sbatch
+#   sbatch --account=<acct> --gpus=a100:1 --mem=80G scripts/run_eval.sbatch
 #SBATCH --job-name=llm-impute-uriel
 #SBATCH --account=rrg-annielee
-#SBATCH --time=02:00:00
+#SBATCH --time=01:30:00
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gpus=h100_3g.40gb:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=48G
+#SBATCH --mem=32G
 #SBATCH --output=artifacts/logs/%x-%j.out
 #SBATCH --error=artifacts/logs/%x-%j.err
 
