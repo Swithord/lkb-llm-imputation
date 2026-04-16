@@ -17,6 +17,21 @@ from schema_io import load_gold_jsonl, load_predictions_jsonl
 DEFAULT_CONF_SCORE = {"low": 0.33, "medium": 0.66, "high": 0.90}
 
 
+def _normalize_resource_group_label(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    alias = {
+        "hrl": "hrl",
+        "mrl": "mrl",
+        "lrl": "lrl",
+        "high": "hrl",
+        "mid": "mrl",
+        "middle": "mrl",
+        "medium": "mrl",
+        "low": "lrl",
+    }
+    return alias.get(raw, raw or "unknown")
+
+
 def _parse_from_fields(obj: dict) -> Tuple[str | None, str | None, str | None]:
     if "value" in obj:
         value = obj.get("value")
@@ -98,54 +113,33 @@ def _safe_div(a: float, b: float) -> float:
     return a / b if b else 0.0
 
 
-def _init_groups() -> Dict[str, Dict[str, int]]:
+def _new_group_stats() -> Dict[str, int]:
     return {
-        "overall": {
-            "n": 0,
-            "correct": 0,
-            "parsed": 0,
-            "high_conf_n": 0,
-            "high_conf_correct": 0,
-            "rationale_ok": 0,
-            "tp": 0,
-            "fp": 0,
-            "tn": 0,
-            "fn": 0,
-        },
-        "high": {
-            "n": 0,
-            "correct": 0,
-            "parsed": 0,
-            "high_conf_n": 0,
-            "high_conf_correct": 0,
-            "rationale_ok": 0,
-            "tp": 0,
-            "fp": 0,
-            "tn": 0,
-            "fn": 0,
-        },
-        "low": {
-            "n": 0,
-            "correct": 0,
-            "parsed": 0,
-            "high_conf_n": 0,
-            "high_conf_correct": 0,
-            "rationale_ok": 0,
-            "tp": 0,
-            "fp": 0,
-            "tn": 0,
-            "fn": 0,
-        },
+        "n": 0,
+        "correct": 0,
+        "parsed": 0,
+        "high_conf_n": 0,
+        "high_conf_correct": 0,
+        "rationale_ok": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
     }
 
 
 def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf_score: Dict[str, float]) -> dict:
-    groups = _init_groups()
+    groups: Dict[str, Dict[str, int]] = {"overall": _new_group_stats()}
     corr_for_cal: list[int] = []
     prob_for_cal: list[float] = []
 
+    def ensure_group(name: str) -> None:
+        if name not in groups:
+            groups[name] = _new_group_stats()
+
     for gid, grec in gold.items():
-        group = grec["resource_group"]
+        group = _normalize_resource_group_label(grec.get("resource_group", ""))
+        ensure_group(group)
         gval = str(grec["gold_value"])
         allowed = set(str(x) for x in grec.get("allowed_values", []))
         prec = pred.get(gid, {})
@@ -157,6 +151,7 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
                 pval, pconf, prat = _parse_from_output(prec)
 
         for key in ("overall", group):
+            ensure_group(key)
             groups[key]["n"] += 1
 
         parsed = pval is not None and (not allowed or pval in allowed)
@@ -164,6 +159,7 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
         rationale_ok = bool(prat and len(prat.split()) <= 30)
 
         for key in ("overall", group):
+            ensure_group(key)
             if parsed:
                 groups[key]["parsed"] += 1
             if correct:
@@ -175,6 +171,7 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
             yi = int(gval)
             pi = int(pval)
             for key in ("overall", group):
+                ensure_group(key)
                 if yi == 1 and pi == 1:
                     groups[key]["tp"] += 1
                 elif yi == 0 and pi == 1:
@@ -191,6 +188,7 @@ def _evaluate_view(gold: Dict[str, dict], pred: Dict[str, dict], view: str, conf
             prob_for_cal.append(float(c))
 
             for key in ("overall", group):
+                ensure_group(key)
                 if pconf == "high":
                     groups[key]["high_conf_n"] += 1
                     if correct:
