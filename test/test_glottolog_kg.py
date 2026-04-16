@@ -306,6 +306,50 @@ def test_kg_typed_geo_prefers_closer_candidates_when_other_signals_tie(tmp_path:
     assert candidates[:2] == ["langB", "langC"]
 
 
+def test_kg_typed_phylo_sparse_reference_demotes_fallback_candidates(tmp_path: Path):
+    loader = _load_module("glottolog_tree_kg_loader_phylo_fallback_test", "glottolog-tree/kg_loader.py")
+    retrieval = _load_module("glottolog_tree_kg_retrieval_phylo_fallback_test", "glottolog-tree/kg_retrieval.py")
+
+    nodes = [
+        {"id": "lang:langA", "type": "Language", "glottocode": "langA", "order_index": 0},
+        {"id": "lang:langB", "type": "Language", "glottocode": "langB", "order_index": 1},
+        {"id": "lang:langC", "type": "Language", "glottocode": "langC", "order_index": 2},
+        {"id": "feat:feat_target", "type": "Feature", "feature_id": "feat_target"},
+        {"id": "fval:feat_target:1", "type": "FeatureValue", "feature_id": "feat_target", "value": "1"},
+        {"id": "fval:feat_target:0", "type": "FeatureValue", "feature_id": "feat_target", "value": "0"},
+    ]
+    edges = [
+        {
+            "source": "lang:langA",
+            "target": "lang:langB",
+            "type": "PHYLO_NEAR",
+            "source_kind": "detail",
+            "rank": 1,
+            "tree_distance": 2,
+            "shared_ancestor_depth": 1,
+            "relation_type": "same_immediate_branch",
+        },
+        {"source": "lang:langB", "target": "fval:feat_target:0", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "0"},
+        {"source": "lang:langC", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+    ]
+    nodes_path = tmp_path / "kg_nodes.jsonl"
+    edges_path = tmp_path / "kg_edges.jsonl"
+    nodes_path.write_text("".join(json.dumps(node) + "\n" for node in nodes), encoding="utf-8")
+    edges_path.write_text("".join(json.dumps(edge) + "\n" for edge in edges), encoding="utf-8")
+
+    graph = loader.load_kg(nodes_path, edges_path)
+    records = retrieval.ranked_phylo_records_typed(
+        graph,
+        language="langA",
+        target_feature="feat_target",
+        correlated=[],
+        pool_limit=3,
+        reference_observations={},
+    )
+    assert [rec["glottocode"] for rec in records[:2]] == ["langB", "langC"]
+    assert records[1]["relation_type"] == "phylogenetic_fallback"
+
+
 def test_kg_typed_geo_penalizes_family_and_macroarea_mismatch(tmp_path: Path):
     loader = _load_module("glottolog_tree_kg_loader_geo_penalty_test", "glottolog-tree/kg_loader.py")
     retrieval = _load_module("glottolog_tree_kg_retrieval_geo_penalty_test", "glottolog-tree/kg_retrieval.py")
@@ -513,11 +557,40 @@ def test_prompting_kg_typed_contrastive_includes_yes_and_no_support(tmp_path: Pa
     module.set_prompt_options("v5_glottolog_tree_json", True)
     module.set_retrieval_options("kg_typed_contrastive", str(nodes_path), str(edges_path))
     _, user = module.construct_prompt("langA", "feat_target")
-    assert "Contrastive decision summary:" in user
+    assert "Nearest contrastive neighbor evidence:" in user
     assert "Closest phylogenetic support for 1: Lang B" in user
     assert "Closest phylogenetic support for 0: Lang C" in user
-    assert "Selected 1-supporters: Lang B (same branch, d=2), Lang B (15.7 km)" in user
-    assert "Selected 0-supporters: Lang C (same branch, d=2), Lang C (31.5 km)" in user
+    assert "Contrastive decision summary:" not in user
+
+
+def test_contrastive_force_include_interleaves_balanced_support_and_defers_fallback():
+    module = _load_module("glottolog_tree_prompting_force_include_test", "glottolog-tree/prompting.py")
+    candidates = ["lang_fb_yes", "lang_no", "lang_yes", "lang_fb_no"]
+    phylo_record_map = {
+        "lang_fb_yes": {"relation_type": "phylogenetic_fallback"},
+        "lang_no": {"relation_type": "same_immediate_branch"},
+        "lang_yes": {"relation_type": "same_immediate_branch"},
+        "lang_fb_no": {"relation_type": "phylogenetic_fallback"},
+    }
+
+    original = module._BASE._target_feature_value
+    module._BASE._target_feature_value = lambda nb, feature: {
+        "lang_fb_yes": "1",
+        "lang_no": "0",
+        "lang_yes": "1",
+        "lang_fb_no": "0",
+    }.get(str(nb))
+    try:
+        forced = module._contrastive_force_include(
+            candidates,
+            "feat_target",
+            per_value=2,
+            phylo_record_map=phylo_record_map,
+        )
+    finally:
+        module._BASE._target_feature_value = original
+
+    assert forced == ["lang_yes", "lang_no", "lang_fb_yes", "lang_fb_no"]
 
 
 def test_prompting_kg_typed_contrastive_contrast_prompt_uses_v4_style_layout(tmp_path: Path):
