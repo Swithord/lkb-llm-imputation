@@ -563,15 +563,75 @@ def test_prompting_kg_typed_contrastive_includes_yes_and_no_support(tmp_path: Pa
     assert "Contrastive decision summary:" not in user
 
 
-def test_contrastive_force_include_interleaves_balanced_support_and_defers_fallback():
+def test_prompting_kg_typed_contrastive_retrieval_only_omits_scaffold_extras(tmp_path: Path):
+    module = _load_module("glottolog_tree_prompting_kg_retrieval_only_test", "glottolog-tree/prompting.py")
+    module.typ_df = module.pd.DataFrame(
+        {"feat_target": [-1, 1, 0], "anchor_feat": [1, 1, 0]},
+        index=["langA", "langB", "langC"],
+    )
+    module.metadata_df = module.pd.DataFrame(
+        {
+            "name": ["Lang A", "Lang B", "Lang C"],
+            "iso639_3": ["aaa", "bbb", "ccc"],
+            "family_name": ["Fam", "Fam", "Fam"],
+            "parent_name": ["Branch A", "Branch A", "Branch B"],
+            "macroareas": ["Area", "Area", "Area"],
+            "latitude": [0.0, 0.1, 0.2],
+            "longitude": [0.0, 0.1, 0.2],
+        },
+        index=["langA", "langB", "langC"],
+    )
+    module.genetic_neighbours = {"langA": ["langB", "langC"], "langB": ["langA"], "langC": ["langA"]}
+    module.genetic_neighbour_details = {
+        "langA": [
+            {"glottocode": "langB", "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+            {"glottocode": "langC", "tree_distance": 3, "shared_ancestor_depth": 1, "relation_type": "sibling_branch"},
+        ]
+    }
+    module.geographic_neighbours = {"langA": ["langB", "langC"], "langB": ["langA"], "langC": ["langA"]}
+    module.top_n_features = 1
+    module.topk_map = {"feat_target": ["anchor_feat"], "anchor_feat": ["feat_target"]}
+    module.clue_support_cache = {}
+    nodes = [
+        {"id": "lang:langA", "type": "Language", "glottocode": "langA", "order_index": 0, "latitude": 0.0, "longitude": 0.0},
+        {"id": "lang:langB", "type": "Language", "glottocode": "langB", "order_index": 1, "latitude": 0.1, "longitude": 0.1},
+        {"id": "lang:langC", "type": "Language", "glottocode": "langC", "order_index": 2, "latitude": 0.2, "longitude": 0.2},
+        {"id": "feat:feat_target", "type": "Feature", "feature_id": "feat_target"},
+        {"id": "feat:anchor_feat", "type": "Feature", "feature_id": "anchor_feat"},
+        {"id": "fval:feat_target:1", "type": "FeatureValue", "feature_id": "feat_target", "value": "1"},
+        {"id": "fval:feat_target:0", "type": "FeatureValue", "feature_id": "feat_target", "value": "0"},
+    ]
+    edges = [
+        {"source": "lang:langA", "target": "lang:langB", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 1, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+        {"source": "lang:langA", "target": "lang:langC", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 2, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+        {"source": "lang:langA", "target": "fval:anchor_feat:1", "type": "OBSERVED_AS", "feature_id": "anchor_feat", "value": "1"},
+        {"source": "lang:langB", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+        {"source": "lang:langC", "target": "fval:feat_target:0", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "0"},
+        {"source": "feat:feat_target", "target": "feat:anchor_feat", "type": "FEATURE_CORRELATED", "rank": 1},
+        {"source": "lang:langA", "target": "lang:langB", "type": "GEO_NEAR", "rank": 1, "km": 1.0},
+        {"source": "lang:langA", "target": "lang:langC", "type": "GEO_NEAR", "rank": 2, "km": 2.0},
+    ]
+    nodes_path = tmp_path / "kg_nodes.jsonl"
+    edges_path = tmp_path / "kg_edges.jsonl"
+    nodes_path.write_text("".join(json.dumps(node) + "\n" for node in nodes), encoding="utf-8")
+    edges_path.write_text("".join(json.dumps(edge) + "\n" for edge in edges), encoding="utf-8")
+
+    module.set_prompt_options("v5_glottolog_tree_retrieval_only_json", True)
+    module.set_retrieval_options("kg_typed_contrastive", str(nodes_path), str(edges_path))
+    _, user = module.construct_prompt("langA", "feat_target")
+    assert "Prompt version: v5_glottolog_tree_retrieval_only_json" in user
+    assert "Glottolog-tree retrieved evidence (detailed evidence):" in user
+    assert "Target-feature vote counts (useful but not decisive):" in user
+    assert "Observed typological facts (anchor features):" not in user
+    assert "Nearest contrastive neighbor evidence:" not in user
+    assert "Target-specific correlated clues (compact):" not in user
+    assert "Weak prevalence prior" not in user
+    assert "Do not rely on anchor facts, correlated clues, or prevalence priors." in user
+
+
+def test_contrastive_force_include_picks_nearest_yes_and_no_support():
     module = _load_module("glottolog_tree_prompting_force_include_test", "glottolog-tree/prompting.py")
     candidates = ["lang_fb_yes", "lang_no", "lang_yes", "lang_fb_no"]
-    phylo_record_map = {
-        "lang_fb_yes": {"relation_type": "phylogenetic_fallback"},
-        "lang_no": {"relation_type": "same_immediate_branch"},
-        "lang_yes": {"relation_type": "same_immediate_branch"},
-        "lang_fb_no": {"relation_type": "phylogenetic_fallback"},
-    }
 
     original = module._BASE._target_feature_value
     module._BASE._target_feature_value = lambda nb, feature: {
@@ -581,16 +641,11 @@ def test_contrastive_force_include_interleaves_balanced_support_and_defers_fallb
         "lang_fb_no": "0",
     }.get(str(nb))
     try:
-        forced = module._contrastive_force_include(
-            candidates,
-            "feat_target",
-            per_value=2,
-            phylo_record_map=phylo_record_map,
-        )
+        forced = module._contrastive_force_include(candidates, "feat_target")
     finally:
         module._BASE._target_feature_value = original
 
-    assert forced == ["lang_yes", "lang_no", "lang_fb_yes", "lang_fb_no"]
+    assert forced == ["lang_fb_yes", "lang_no"]
 
 
 def test_prompting_kg_typed_contrastive_contrast_prompt_uses_v4_style_layout(tmp_path: Path):
