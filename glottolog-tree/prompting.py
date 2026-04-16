@@ -396,15 +396,51 @@ def _format_phylo_neighbor_block(
     return lines
 
 
-def _contrastive_force_include(candidates: Sequence[str], feature: str) -> List[str]:
+def _contrastive_force_per_value(k: int) -> int:
+    if k <= 3:
+        return 1
+    return 2
+
+
+def _contrastive_force_include(
+    candidates: Sequence[str],
+    feature: str,
+    per_value: int = 1,
+    phylo_record_map: Optional[Dict[str, Dict[str, object]]] = None,
+) -> List[str]:
+    buckets: Dict[str, List[str]] = {"1": [], "0": []}
+    fallback_buckets: Dict[str, List[str]] = {"1": [], "0": []}
+
+    for candidate in candidates:
+        nb = str(candidate)
+        desired_value = _BASE._target_feature_value(nb, feature)
+        if desired_value not in buckets:
+            continue
+        rec = phylo_record_map.get(nb, {}) if phylo_record_map is not None else {}
+        if phylo_record_map is not None and str(rec.get("relation_type") or "") == "phylogenetic_fallback":
+            if len(fallback_buckets[desired_value]) < per_value:
+                fallback_buckets[desired_value].append(nb)
+            continue
+        if len(buckets[desired_value]) < per_value:
+            buckets[desired_value].append(nb)
+
+    for desired_value in ("1", "0"):
+        if len(buckets[desired_value]) >= per_value:
+            continue
+        needed = per_value - len(buckets[desired_value])
+        buckets[desired_value].extend(fallback_buckets[desired_value][:needed])
+
     ordered: List[str] = []
     seen: set[str] = set()
-    for desired_value in ("1", "0"):
-        candidate = _BASE._nearest_candidate_with_value(candidates, feature, desired_value)
-        if candidate is None or candidate in seen:
-            continue
-        seen.add(candidate)
-        ordered.append(candidate)
+    for idx in range(per_value):
+        for desired_value in ("1", "0"):
+            if idx >= len(buckets[desired_value]):
+                continue
+            candidate = buckets[desired_value][idx]
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            ordered.append(candidate)
     return ordered
 
 
@@ -546,7 +582,12 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     phylo_candidates = [str(rec["glottocode"]) for rec in phylo_records]
     phylo_record_map = {str(rec["glottocode"]): rec for rec in phylo_records}
     if RETRIEVAL_BACKEND in {"kg_typed_contrastive", "hybrid_flat_kg"}:
-        contrastive_force = _contrastive_force_include(phylo_candidates, feature)
+        contrastive_force = _contrastive_force_include(
+            phylo_candidates,
+            feature,
+            per_value=_contrastive_force_per_value(phylo_k),
+            phylo_record_map=phylo_record_map,
+        )
         if RETRIEVAL_BACKEND == "hybrid_flat_kg":
             phylo_force = _ordered_unique(list(legacy_phylo_candidates[: min(2, phylo_k)]) + contrastive_force)
         else:
@@ -570,7 +611,11 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         legacy_geo_candidates = _legacy_ranked_geo_candidates(language)
     geo_candidates = _feature_conditioned_geo_candidates(language, feature, correlated)
     if RETRIEVAL_BACKEND in {"kg_typed_contrastive", "hybrid_flat_kg"}:
-        contrastive_geo_force = _contrastive_force_include(geo_candidates, feature)
+        contrastive_geo_force = _contrastive_force_include(
+            geo_candidates,
+            feature,
+            per_value=_contrastive_force_per_value(geo_k),
+        )
         if RETRIEVAL_BACKEND == "hybrid_flat_kg":
             geo_force = _ordered_unique(list(legacy_geo_candidates[: min(1, geo_k)]) + contrastive_geo_force)
         else:
@@ -751,60 +796,23 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
                 f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
             )
 
-        if RETRIEVAL_BACKEND == "kg_typed_contrastive":
-            yes_phylo_selected = _supporting_phylo_neighbor_summaries(
-                phylo_neighbors,
-                phylo_record_map,
-                feature,
-                "1",
-                max_items=2,
-            )
-            no_phylo_selected = _supporting_phylo_neighbor_summaries(
-                phylo_neighbors,
-                phylo_record_map,
-                feature,
-                "0",
-                max_items=2,
-            )
-            yes_geo_selected = _supporting_geo_neighbor_summaries(language, geo_neighbors, feature, "1", max_items=2)
-            no_geo_selected = _supporting_geo_neighbor_summaries(language, geo_neighbors, feature, "0", max_items=2)
+        user_lines.append("Nearest contrastive neighbor evidence:")
+        user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
+        user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
 
-            user_lines.append("Contrastive decision summary:")
-            user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
-            user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
+        user_lines.append("Target-specific correlated clues (compact):")
+        if clues:
+            for idx, clue in enumerate(clues, start=1):
+                user_lines.append(
+                    f"{idx}) {clue['feature']}={clue['value']} -> target support {clue['yes']} yes / {clue['no']} no"
+                )
             user_lines.append(
-                "- Selected 1-supporters: "
-                + (", ".join(yes_phylo_selected + yes_geo_selected) if (yes_phylo_selected or yes_geo_selected) else "none in selected evidence")
-            )
-            user_lines.extend(_contrastive_clue_lines(clues, "yes", "1"))
-            user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
-            user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
-            user_lines.append(
-                "- Selected 0-supporters: "
-                + (", ".join(no_phylo_selected + no_geo_selected) if (no_phylo_selected or no_geo_selected) else "none in selected evidence")
-            )
-            user_lines.extend(_contrastive_clue_lines(clues, "no", "0"))
-            user_lines.append(
-                f"- Correlated clue balance: {clue_summary['yes']} yes / {clue_summary['no']} no / {clue_summary['tie']} tie"
+                f"- Correlated clues leaning: {clue_summary['yes']} yes / {clue_summary['no']} no / {clue_summary['tie']} tie"
             )
         else:
-            user_lines.append("Nearest contrastive neighbor evidence:")
-            user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
-            user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
-            user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
-            user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
-
-            user_lines.append("Target-specific correlated clues (compact):")
-            if clues:
-                for idx, clue in enumerate(clues, start=1):
-                    user_lines.append(
-                        f"{idx}) {clue['feature']}={clue['value']} -> target support {clue['yes']} yes / {clue['no']} no"
-                    )
-                user_lines.append(
-                    f"- Correlated clues leaning: {clue_summary['yes']} yes / {clue_summary['no']} no / {clue_summary['tie']} tie"
-                )
-            else:
-                user_lines.append("- No reliable correlated clues with enough support.")
+            user_lines.append("- No reliable correlated clues with enough support.")
 
         user_lines.append(f"Prompt version: {PROMPT_VERSION}")
         user_lines.append("Task:")
@@ -814,8 +822,6 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append("Reasoning guidance:")
         user_lines.append("- Compare the support for value 0 versus value 1.")
         user_lines.append("- Weigh observed anchor features, Glottolog-tree relations, geographic evidence, and correlated clues together.")
-        if RETRIEVAL_BACKEND == "kg_typed_contrastive":
-            user_lines.append("- Start from the contrastive decision summary; use the detailed evidence blocks to resolve remaining uncertainty.")
         user_lines.append("- Prefer closer genealogical evidence from the same branch or sibling branches before higher shared ancestors.")
         user_lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
         user_lines.append("- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.")
