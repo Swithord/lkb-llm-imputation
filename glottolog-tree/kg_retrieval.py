@@ -158,28 +158,6 @@ _RELATION_PRIORITY = {
     "phylogenetic_fallback": 0,
 }
 
-
-def _phylo_fallback_penalty(
-    relation_type: str,
-    tree_distance: int,
-    reference_values: Dict[str, str],
-) -> int:
-    if relation_type != "phylogenetic_fallback":
-        return 0
-
-    observed_reference = len(reference_values)
-    penalty = 3
-    if observed_reference <= 1:
-        penalty += 4
-    elif observed_reference <= 3:
-        penalty += 2
-    if tree_distance >= 100:
-        penalty += 2
-    elif tree_distance >= 30:
-        penalty += 1
-    return penalty
-
-
 def _reference_values(graph, language: str, reference_observations: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     if reference_observations is None:
         return graph.language_observations.get(str(language), {})
@@ -300,7 +278,7 @@ def _typed_phylo_score(
     new_coverage = len(cand_observed - ref_observed)
     shared_values = _shared_feature_value_count(reference_values, candidate_values, feature_targets)
     relation_priority = _RELATION_PRIORITY.get(relation_type, 1)
-    fallback_penalty = _phylo_fallback_penalty(relation_type, tree_distance, reference_values)
+    fallback_penalty = 1 if relation_type == "phylogenetic_fallback" else 0
 
     return (
         -fallback_penalty,

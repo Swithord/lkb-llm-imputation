@@ -563,15 +563,9 @@ def test_prompting_kg_typed_contrastive_includes_yes_and_no_support(tmp_path: Pa
     assert "Contrastive decision summary:" not in user
 
 
-def test_contrastive_force_include_interleaves_balanced_support_and_defers_fallback():
+def test_contrastive_force_include_picks_nearest_yes_and_no_support():
     module = _load_module("glottolog_tree_prompting_force_include_test", "glottolog-tree/prompting.py")
     candidates = ["lang_fb_yes", "lang_no", "lang_yes", "lang_fb_no"]
-    phylo_record_map = {
-        "lang_fb_yes": {"relation_type": "phylogenetic_fallback"},
-        "lang_no": {"relation_type": "same_immediate_branch"},
-        "lang_yes": {"relation_type": "same_immediate_branch"},
-        "lang_fb_no": {"relation_type": "phylogenetic_fallback"},
-    }
 
     original = module._BASE._target_feature_value
     module._BASE._target_feature_value = lambda nb, feature: {
@@ -581,16 +575,11 @@ def test_contrastive_force_include_interleaves_balanced_support_and_defers_fallb
         "lang_fb_no": "0",
     }.get(str(nb))
     try:
-        forced = module._contrastive_force_include(
-            candidates,
-            "feat_target",
-            per_value=2,
-            phylo_record_map=phylo_record_map,
-        )
+        forced = module._contrastive_force_include(candidates, "feat_target")
     finally:
         module._BASE._target_feature_value = original
 
-    assert forced == ["lang_yes", "lang_no", "lang_fb_yes", "lang_fb_no"]
+    assert forced == ["lang_fb_yes", "lang_no"]
 
 
 def test_prompting_kg_typed_contrastive_contrast_prompt_uses_v4_style_layout(tmp_path: Path):

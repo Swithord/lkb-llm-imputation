@@ -396,51 +396,18 @@ def _format_phylo_neighbor_block(
     return lines
 
 
-def _contrastive_force_per_value(k: int) -> int:
-    if k <= 3:
-        return 1
-    return 2
-
-
 def _contrastive_force_include(
     candidates: Sequence[str],
     feature: str,
-    per_value: int = 1,
-    phylo_record_map: Optional[Dict[str, Dict[str, object]]] = None,
 ) -> List[str]:
-    buckets: Dict[str, List[str]] = {"1": [], "0": []}
-    fallback_buckets: Dict[str, List[str]] = {"1": [], "0": []}
-
-    for candidate in candidates:
-        nb = str(candidate)
-        desired_value = _BASE._target_feature_value(nb, feature)
-        if desired_value not in buckets:
-            continue
-        rec = phylo_record_map.get(nb, {}) if phylo_record_map is not None else {}
-        if phylo_record_map is not None and str(rec.get("relation_type") or "") == "phylogenetic_fallback":
-            if len(fallback_buckets[desired_value]) < per_value:
-                fallback_buckets[desired_value].append(nb)
-            continue
-        if len(buckets[desired_value]) < per_value:
-            buckets[desired_value].append(nb)
-
-    for desired_value in ("1", "0"):
-        if len(buckets[desired_value]) >= per_value:
-            continue
-        needed = per_value - len(buckets[desired_value])
-        buckets[desired_value].extend(fallback_buckets[desired_value][:needed])
-
     ordered: List[str] = []
     seen: set[str] = set()
-    for idx in range(per_value):
-        for desired_value in ("1", "0"):
-            if idx >= len(buckets[desired_value]):
-                continue
-            candidate = buckets[desired_value][idx]
-            if candidate in seen:
-                continue
-            seen.add(candidate)
-            ordered.append(candidate)
+    for desired_value in ("1", "0"):
+        candidate = _BASE._nearest_candidate_with_value(candidates, feature, desired_value)
+        if candidate is None or candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
     return ordered
 
 
@@ -582,12 +549,7 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     phylo_candidates = [str(rec["glottocode"]) for rec in phylo_records]
     phylo_record_map = {str(rec["glottocode"]): rec for rec in phylo_records}
     if RETRIEVAL_BACKEND in {"kg_typed_contrastive", "hybrid_flat_kg"}:
-        contrastive_force = _contrastive_force_include(
-            phylo_candidates,
-            feature,
-            per_value=_contrastive_force_per_value(phylo_k),
-            phylo_record_map=phylo_record_map,
-        )
+        contrastive_force = _contrastive_force_include(phylo_candidates, feature)
         if RETRIEVAL_BACKEND == "hybrid_flat_kg":
             phylo_force = _ordered_unique(list(legacy_phylo_candidates[: min(2, phylo_k)]) + contrastive_force)
         else:
@@ -611,11 +573,7 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         legacy_geo_candidates = _legacy_ranked_geo_candidates(language)
     geo_candidates = _feature_conditioned_geo_candidates(language, feature, correlated)
     if RETRIEVAL_BACKEND in {"kg_typed_contrastive", "hybrid_flat_kg"}:
-        contrastive_geo_force = _contrastive_force_include(
-            geo_candidates,
-            feature,
-            per_value=_contrastive_force_per_value(geo_k),
-        )
+        contrastive_geo_force = _contrastive_force_include(geo_candidates, feature)
         if RETRIEVAL_BACKEND == "hybrid_flat_kg":
             geo_force = _ordered_unique(list(legacy_geo_candidates[: min(1, geo_k)]) + contrastive_geo_force)
         else:
