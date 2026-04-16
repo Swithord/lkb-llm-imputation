@@ -173,6 +173,68 @@ def _has_observed_value(graph, language: str, feature: str) -> bool:
     return _observed_value(graph, language, feature) is not None
 
 
+def _text_or_none(value) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _macroareas(node: Optional[dict]) -> set[str]:
+    if not node:
+        return set()
+    raw = node.get("macroareas")
+    if raw is None:
+        return set()
+    if isinstance(raw, (list, tuple, set)):
+        return {str(item).strip() for item in raw if str(item).strip()}
+    text = str(raw).strip()
+    return {text} if text else set()
+
+
+def _categorical_match_score(reference: Optional[str], candidate: Optional[str]) -> int:
+    if not reference or not candidate:
+        return 0
+    return 1 if reference == candidate else -1
+
+
+def _macroarea_match_score(reference_node: Optional[dict], candidate_node: Optional[dict]) -> int:
+    reference_macroareas = _macroareas(reference_node)
+    candidate_macroareas = _macroareas(candidate_node)
+    if not reference_macroareas or not candidate_macroareas:
+        return 0
+    return 1 if reference_macroareas & candidate_macroareas else -1
+
+
+def _geo_distance_km(
+    graph,
+    reference_language: str,
+    candidate_language: str,
+    original_rank: int,
+) -> float:
+    reference_node = graph.language_node(reference_language)
+    candidate_node = graph.language_node(candidate_language)
+    if reference_node is not None and candidate_node is not None:
+        lat0 = _coerce_float(reference_node.get("latitude"))
+        lon0 = _coerce_float(reference_node.get("longitude"))
+        lat1 = _coerce_float(candidate_node.get("latitude"))
+        lon1 = _coerce_float(candidate_node.get("longitude"))
+        if lat0 is not None and lon0 is not None and lat1 is not None and lon1 is not None:
+            return _haversine_km(lat0, lon0, lat1, lon1)
+
+        reference_id = str(reference_node.get("id", ""))
+        candidate_id = str(candidate_node.get("id", ""))
+        for edge in graph.outgoing(reference_id, "GEO_NEAR"):
+            if str(edge.get("target", "")) != candidate_id:
+                continue
+            km = _coerce_float(edge.get("km"))
+            if km is not None:
+                return km
+
+    # Preserve original ordering as a weak fallback when distance is unavailable.
+    return float(original_rank + 1) * 1_000_000.0
+
+
 def _observed_feature_set_from_values(observed: Dict[str, str], features: Sequence[str]) -> set[str]:
     return {str(feature) for feature in features if str(feature) in observed}
 
@@ -358,7 +420,33 @@ def _typed_geo_score(
     cand_observed = _observed_feature_set_from_values(candidate_values, feature_targets)
     anchor_overlap = len((cand_observed & ref_observed) - ({str(target_feature)}))
     shared_values = _shared_feature_value_count(reference_values, candidate_values, feature_targets)
-    return (has_target, anchor_overlap, shared_values, -original_rank, str(candidate_language))
+    reference_node = graph.language_node(reference_language)
+    candidate_node = graph.language_node(candidate_language)
+    same_parent = _categorical_match_score(
+        _text_or_none(reference_node.get("parent_id") if reference_node else None)
+        or _text_or_none(reference_node.get("parent_name") if reference_node else None),
+        _text_or_none(candidate_node.get("parent_id") if candidate_node else None)
+        or _text_or_none(candidate_node.get("parent_name") if candidate_node else None),
+    )
+    same_family = _categorical_match_score(
+        _text_or_none(reference_node.get("family_id") if reference_node else None)
+        or _text_or_none(reference_node.get("family_name") if reference_node else None),
+        _text_or_none(candidate_node.get("family_id") if candidate_node else None)
+        or _text_or_none(candidate_node.get("family_name") if candidate_node else None),
+    )
+    macro_match = _macroarea_match_score(reference_node, candidate_node)
+    distance_km = _geo_distance_km(graph, reference_language, candidate_language, original_rank)
+    return (
+        has_target,
+        anchor_overlap,
+        same_parent,
+        same_family,
+        macro_match,
+        shared_values,
+        -distance_km,
+        -original_rank,
+        str(candidate_language),
+    )
 
 
 def ranked_geo_candidates_typed(

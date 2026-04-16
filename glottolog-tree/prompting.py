@@ -46,7 +46,12 @@ _KG_GRAPH = None
 
 
 def _selection_variant() -> str:
-    if PROMPT_VERSION in {"v4_strict_json", "v5_glottolog_tree_json", "v5_glottolog_tree_compact_json"}:
+    if PROMPT_VERSION in {
+        "v4_strict_json",
+        "v5_glottolog_tree_json",
+        "v5_glottolog_tree_compact_json",
+        "v5_glottolog_tree_contrast_json",
+    }:
         return "v4"
     return "v3"
 
@@ -600,7 +605,103 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append("- (no observed anchor facts)")
 
     allowed = _BASE._allowed_values(feature)
-    if PROMPT_VERSION in {"v5_glottolog_tree_json", "v5_glottolog_tree_compact_json"}:
+    if PROMPT_VERSION == "v5_glottolog_tree_contrast_json":
+        yes_phylo_selected = _supporting_phylo_neighbor_summaries(
+            phylo_neighbors,
+            phylo_record_map,
+            feature,
+            "1",
+            max_items=2,
+        )
+        no_phylo_selected = _supporting_phylo_neighbor_summaries(
+            phylo_neighbors,
+            phylo_record_map,
+            feature,
+            "0",
+            max_items=2,
+        )
+        yes_geo_selected = _supporting_geo_neighbor_summaries(language, geo_neighbors, feature, "1", max_items=2)
+        no_geo_selected = _supporting_geo_neighbor_summaries(language, geo_neighbors, feature, "0", max_items=2)
+        yes_clues = [clue for clue in clues if clue.get("majority") == "yes"][:2]
+        no_clues = [clue for clue in clues if clue.get("majority") == "no"][:2]
+
+        user_lines.append(f"Prompt version: {PROMPT_VERSION}")
+        user_lines.append("Task:")
+        user_lines.append("Predict the missing value for the following feature:")
+        user_lines.append(f"- Feature: {feature}")
+        user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
+        user_lines.append("Competing evidence for value 1:")
+        user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
+        user_lines.append(
+            "- Selected phylogenetic/geographic 1-neighbors: "
+            + (
+                ", ".join(yes_phylo_selected + yes_geo_selected)
+                if (yes_phylo_selected or yes_geo_selected)
+                else "none in selected evidence"
+            )
+        )
+        if yes_clues:
+            for clue in yes_clues:
+                user_lines.append(
+                    f"- Clue for 1: {clue['feature']}={clue['value']} -> {clue['yes']} yes / {clue['no']} no"
+                )
+        else:
+            user_lines.append("- Clue for 1: no strong correlated clue leaning toward 1")
+
+        user_lines.append("Competing evidence for value 0:")
+        user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
+        user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+        user_lines.append(
+            "- Selected phylogenetic/geographic 0-neighbors: "
+            + (
+                ", ".join(no_phylo_selected + no_geo_selected)
+                if (no_phylo_selected or no_geo_selected)
+                else "none in selected evidence"
+            )
+        )
+        if no_clues:
+            for clue in no_clues:
+                user_lines.append(
+                    f"- Clue for 0: {clue['feature']}={clue['value']} -> {clue['yes']} yes / {clue['no']} no"
+                )
+        else:
+            user_lines.append("- Clue for 0: no strong correlated clue leaning toward 0")
+
+        if INCLUDE_VOTE_TABLE:
+            g = votes["genetic"]
+            geo = votes["geographic"]
+            ov = votes["overall"]
+            user_lines.append("Secondary vote snapshot:")
+            user_lines.append(f"- Genetic votes: {g['yes']} yes / {g['no']} no / {g['missing']} unk")
+            user_lines.append(f"- Geographic votes: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk")
+            user_lines.append(f"- Overall votes: {ov['yes']} yes / {ov['no']} no")
+            user_lines.append(f"- Weak prevalence prior: {prior_value} ({prior_ratio:.0%} of observed)")
+
+        user_lines.append("Reasoning guidance:")
+        user_lines.append("- Compare which side has stronger, closer, and more consistent evidence.")
+        user_lines.append("- Use anchor features and closest neighbors first; use votes only as secondary evidence.")
+        user_lines.append("- Prefer closer genealogical evidence from the same branch or sibling branches before higher shared ancestors.")
+        user_lines.append("- A minority value is acceptable if its evidence is clearly stronger.")
+        user_lines.append("- Use prevalence only as a weak tie-breaker when the two sides are otherwise balanced.")
+        user_lines.append("Output format (STRICT JSON):")
+        user_lines.append("Output ONLY valid JSON.")
+        user_lines.append("Return exactly one minified JSON object on one line with keys: value, confidence, rationale.")
+        user_lines.append("- value: one of the allowed values above")
+        user_lines.append("- confidence: low, medium, or high")
+        user_lines.append("- rationale: at most 20 words")
+        user_lines.append("No Markdown, no prose, no code fences, no trailing text.")
+        user_lines.append("Few-shot examples:")
+        user_lines.append(
+            '{"value":"1","confidence":"medium","rationale":"Closer branch and geographic evidence for 1 outweigh broader support for 0."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"medium","rationale":"Closer evidence for 0 is stronger despite a few supporting 1 neighbors."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"low","rationale":"Both sides are weak, so the prevalence prior favors 0."}'
+        )
+    elif PROMPT_VERSION in {"v5_glottolog_tree_json", "v5_glottolog_tree_compact_json"}:
         user_lines.append(
             "Glottolog-tree retrieved evidence (compact evidence):"
             if _is_compact_prompt()

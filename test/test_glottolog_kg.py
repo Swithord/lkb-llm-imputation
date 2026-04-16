@@ -243,6 +243,132 @@ def test_kg_typed_prioritizes_feature_supported_candidates(tmp_path: Path):
     assert [rec["glottocode"] for rec in records[:2]] == ["langC", "langB"]
 
 
+def test_kg_typed_geo_prefers_closer_candidates_when_other_signals_tie(tmp_path: Path):
+    loader = _load_module("glottolog_tree_kg_loader_geo_distance_test", "glottolog-tree/kg_loader.py")
+    retrieval = _load_module("glottolog_tree_kg_retrieval_geo_distance_test", "glottolog-tree/kg_retrieval.py")
+
+    nodes = [
+        {
+            "id": "lang:langA",
+            "type": "Language",
+            "glottocode": "langA",
+            "order_index": 0,
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "family_name": "Fam",
+            "parent_name": "Branch",
+            "macroareas": ["Area"],
+        },
+        {
+            "id": "lang:langB",
+            "type": "Language",
+            "glottocode": "langB",
+            "order_index": 1,
+            "latitude": 0.0,
+            "longitude": 0.1,
+            "family_name": "Fam",
+            "parent_name": "Branch",
+            "macroareas": ["Area"],
+        },
+        {
+            "id": "lang:langC",
+            "type": "Language",
+            "glottocode": "langC",
+            "order_index": 2,
+            "latitude": 0.0,
+            "longitude": 2.0,
+            "family_name": "Fam",
+            "parent_name": "Branch",
+            "macroareas": ["Area"],
+        },
+        {"id": "feat:feat_target", "type": "Feature", "feature_id": "feat_target"},
+        {"id": "fval:feat_target:1", "type": "FeatureValue", "feature_id": "feat_target", "value": "1"},
+    ]
+    edges = [
+        {"source": "lang:langA", "target": "lang:langB", "type": "GEO_NEAR", "rank": 2, "km": 11.1},
+        {"source": "lang:langA", "target": "lang:langC", "type": "GEO_NEAR", "rank": 1, "km": 222.4},
+        {"source": "lang:langB", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+        {"source": "lang:langC", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+    ]
+    nodes_path = tmp_path / "kg_nodes.jsonl"
+    edges_path = tmp_path / "kg_edges.jsonl"
+    nodes_path.write_text("".join(json.dumps(node) + "\n" for node in nodes), encoding="utf-8")
+    edges_path.write_text("".join(json.dumps(edge) + "\n" for edge in edges), encoding="utf-8")
+
+    graph = loader.load_kg(nodes_path, edges_path)
+    candidates = retrieval.ranked_geo_candidates_typed(
+        graph,
+        language="langA",
+        target_feature="feat_target",
+        correlated=[],
+        pool_limit=3,
+    )
+    assert candidates[:2] == ["langB", "langC"]
+
+
+def test_kg_typed_geo_penalizes_family_and_macroarea_mismatch(tmp_path: Path):
+    loader = _load_module("glottolog_tree_kg_loader_geo_penalty_test", "glottolog-tree/kg_loader.py")
+    retrieval = _load_module("glottolog_tree_kg_retrieval_geo_penalty_test", "glottolog-tree/kg_retrieval.py")
+
+    nodes = [
+        {
+            "id": "lang:langA",
+            "type": "Language",
+            "glottocode": "langA",
+            "order_index": 0,
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "family_name": "FamA",
+            "parent_name": "BranchA",
+            "macroareas": ["AreaA"],
+        },
+        {
+            "id": "lang:langB",
+            "type": "Language",
+            "glottocode": "langB",
+            "order_index": 1,
+            "latitude": 0.0,
+            "longitude": 0.2,
+            "family_name": "FamA",
+            "parent_name": "BranchA",
+            "macroareas": ["AreaA"],
+        },
+        {
+            "id": "lang:langC",
+            "type": "Language",
+            "glottocode": "langC",
+            "order_index": 2,
+            "latitude": 0.0,
+            "longitude": 0.1,
+            "family_name": "FamB",
+            "parent_name": "BranchB",
+            "macroareas": ["AreaB"],
+        },
+        {"id": "feat:feat_target", "type": "Feature", "feature_id": "feat_target"},
+        {"id": "fval:feat_target:1", "type": "FeatureValue", "feature_id": "feat_target", "value": "1"},
+    ]
+    edges = [
+        {"source": "lang:langA", "target": "lang:langB", "type": "GEO_NEAR", "rank": 1, "km": 22.2},
+        {"source": "lang:langA", "target": "lang:langC", "type": "GEO_NEAR", "rank": 2, "km": 11.1},
+        {"source": "lang:langB", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+        {"source": "lang:langC", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+    ]
+    nodes_path = tmp_path / "kg_nodes.jsonl"
+    edges_path = tmp_path / "kg_edges.jsonl"
+    nodes_path.write_text("".join(json.dumps(node) + "\n" for node in nodes), encoding="utf-8")
+    edges_path.write_text("".join(json.dumps(edge) + "\n" for edge in edges), encoding="utf-8")
+
+    graph = loader.load_kg(nodes_path, edges_path)
+    candidates = retrieval.ranked_geo_candidates_typed(
+        graph,
+        language="langA",
+        target_feature="feat_target",
+        correlated=[],
+        pool_limit=3,
+    )
+    assert candidates[:2] == ["langB", "langC"]
+
+
 def test_prompting_kg_typed_surfaces_reordered_evidence(tmp_path: Path):
     module = _load_module("glottolog_tree_prompting_kg_typed_test", "glottolog-tree/prompting.py")
     module.typ_df = module.pd.DataFrame(
@@ -392,6 +518,69 @@ def test_prompting_kg_typed_contrastive_includes_yes_and_no_support(tmp_path: Pa
     assert "Closest phylogenetic support for 0: Lang C" in user
     assert "Selected 1-supporters: Lang B (same branch, d=2), Lang B (15.7 km)" in user
     assert "Selected 0-supporters: Lang C (same branch, d=2), Lang C (31.5 km)" in user
+
+
+def test_prompting_kg_typed_contrastive_contrast_prompt_uses_v4_style_layout(tmp_path: Path):
+    module = _load_module("glottolog_tree_prompting_kg_contrastive_v5_test", "glottolog-tree/prompting.py")
+    module.typ_df = module.pd.DataFrame(
+        {"feat_target": [-1, 1, 0], "anchor_feat": [1, 1, 0]},
+        index=["langA", "langB", "langC"],
+    )
+    module.metadata_df = module.pd.DataFrame(
+        {
+            "name": ["Lang A", "Lang B", "Lang C"],
+            "iso639_3": ["aaa", "bbb", "ccc"],
+            "family_name": ["Fam", "Fam", "Fam"],
+            "parent_name": ["Branch A", "Branch A", "Branch B"],
+            "macroareas": ["Area", "Area", "Area"],
+            "latitude": [0.0, 0.1, 0.2],
+            "longitude": [0.0, 0.1, 0.2],
+        },
+        index=["langA", "langB", "langC"],
+    )
+    module.genetic_neighbours = {"langA": ["langB", "langC"], "langB": ["langA"], "langC": ["langA"]}
+    module.genetic_neighbour_details = {
+        "langA": [
+            {"glottocode": "langB", "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+            {"glottocode": "langC", "tree_distance": 3, "shared_ancestor_depth": 1, "relation_type": "sibling_branch"},
+        ]
+    }
+    module.geographic_neighbours = {"langA": ["langB", "langC"], "langB": ["langA"], "langC": ["langA"]}
+    module.top_n_features = 1
+    module.topk_map = {"feat_target": ["anchor_feat"], "anchor_feat": ["feat_target"]}
+    module.clue_support_cache = {}
+    nodes = [
+        {"id": "lang:langA", "type": "Language", "glottocode": "langA", "order_index": 0, "latitude": 0.0, "longitude": 0.0},
+        {"id": "lang:langB", "type": "Language", "glottocode": "langB", "order_index": 1, "latitude": 0.1, "longitude": 0.1},
+        {"id": "lang:langC", "type": "Language", "glottocode": "langC", "order_index": 2, "latitude": 0.2, "longitude": 0.2},
+        {"id": "feat:feat_target", "type": "Feature", "feature_id": "feat_target"},
+        {"id": "feat:anchor_feat", "type": "Feature", "feature_id": "anchor_feat"},
+        {"id": "fval:feat_target:1", "type": "FeatureValue", "feature_id": "feat_target", "value": "1"},
+        {"id": "fval:feat_target:0", "type": "FeatureValue", "feature_id": "feat_target", "value": "0"},
+    ]
+    edges = [
+        {"source": "lang:langA", "target": "lang:langB", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 1, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+        {"source": "lang:langA", "target": "lang:langC", "type": "PHYLO_NEAR", "source_kind": "detail", "rank": 2, "tree_distance": 2, "shared_ancestor_depth": 1, "relation_type": "same_immediate_branch"},
+        {"source": "lang:langB", "target": "fval:feat_target:1", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "1"},
+        {"source": "lang:langC", "target": "fval:feat_target:0", "type": "OBSERVED_AS", "feature_id": "feat_target", "value": "0"},
+        {"source": "lang:langA", "target": "lang:langB", "type": "GEO_NEAR", "rank": 1, "km": 1.0},
+        {"source": "lang:langA", "target": "lang:langC", "type": "GEO_NEAR", "rank": 2, "km": 2.0},
+    ]
+    nodes_path = tmp_path / "kg_nodes.jsonl"
+    edges_path = tmp_path / "kg_edges.jsonl"
+    nodes_path.write_text("".join(json.dumps(node) + "\n" for node in nodes), encoding="utf-8")
+    edges_path.write_text("".join(json.dumps(edge) + "\n" for edge in edges), encoding="utf-8")
+
+    module.set_prompt_options("v5_glottolog_tree_contrast_json", True)
+    module.set_retrieval_options("kg_typed_contrastive", str(nodes_path), str(edges_path))
+    _, user = module.construct_prompt("langA", "feat_target")
+    assert "Prompt version: v5_glottolog_tree_contrast_json" in user
+    assert "Competing evidence for value 1:" in user
+    assert "Competing evidence for value 0:" in user
+    assert "Selected phylogenetic/geographic 1-neighbors: Lang B (same branch, d=2), Lang B (15.7 km)" in user
+    assert "Selected phylogenetic/geographic 0-neighbors: Lang C (same branch, d=2), Lang C (31.5 km)" in user
+    assert "Secondary vote snapshot:" in user
+    assert "Glottolog-tree retrieved evidence" not in user
 
 
 def test_compact_prompt_omits_extra_graph_metadata(tmp_path: Path):
