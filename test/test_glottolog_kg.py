@@ -387,8 +387,11 @@ def test_prompting_kg_typed_contrastive_includes_yes_and_no_support(tmp_path: Pa
     module.set_prompt_options("v5_glottolog_tree_json", True)
     module.set_retrieval_options("kg_typed_contrastive", str(nodes_path), str(edges_path))
     _, user = module.construct_prompt("langA", "feat_target")
+    assert "Contrastive decision summary:" in user
     assert "Closest phylogenetic support for 1: Lang B" in user
     assert "Closest phylogenetic support for 0: Lang C" in user
+    assert "Selected 1-supporters: Lang B (same branch, d=2), Lang B (15.7 km)" in user
+    assert "Selected 0-supporters: Lang C (same branch, d=2), Lang C (31.5 km)" in user
 
 
 def test_compact_prompt_omits_extra_graph_metadata(tmp_path: Path):

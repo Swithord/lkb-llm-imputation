@@ -431,6 +431,62 @@ def _nearest_phylo_supporting_neighbor(
     return None
 
 
+def _supporting_phylo_neighbor_summaries(
+    neighbors: Sequence[str],
+    phylo_record_map: Dict[str, Dict[str, object]],
+    feature: str,
+    desired_value: str,
+    max_items: int = 2,
+) -> List[str]:
+    summaries: List[str] = []
+    for idx, nb in enumerate(neighbors, start=1):
+        if _BASE._target_feature_value(nb, feature) != desired_value:
+            continue
+        rec = phylo_record_map.get(str(nb), {})
+        relation_type = _compact_relation_label(rec.get("relation_type"))
+        tree_distance = _coerce_non_negative_int(rec.get("tree_distance"), idx)
+        summaries.append(f"{_BASE._language_label(nb)} ({relation_type}, d={tree_distance})")
+        if len(summaries) >= max_items:
+            break
+    return summaries
+
+
+def _supporting_geo_neighbor_summaries(
+    language: str,
+    neighbors: Sequence[str],
+    feature: str,
+    desired_value: str,
+    max_items: int = 2,
+) -> List[str]:
+    summaries: List[str] = []
+    lat0, lon0 = _BASE._meta_lat_lon(language)
+    for nb in neighbors:
+        if _BASE._target_feature_value(nb, feature) != desired_value:
+            continue
+        label = _BASE._language_label(nb)
+        if lat0 is not None and lon0 is not None:
+            lat1, lon1 = _BASE._meta_lat_lon(nb)
+            if lat1 is not None and lon1 is not None:
+                summaries.append(f"{label} ({_BASE._haversine_km(lat0, lon0, lat1, lon1):.1f} km)")
+            else:
+                summaries.append(label)
+        else:
+            summaries.append(label)
+        if len(summaries) >= max_items:
+            break
+    return summaries
+
+
+def _contrastive_clue_lines(clues: Sequence[Dict[str, object]], majority: str, desired_value: str) -> List[str]:
+    filtered = [clue for clue in clues if clue.get("majority") == majority][:2]
+    if not filtered:
+        return [f"- Clues leaning to {desired_value}: none strong enough"]
+    return [
+        f"- Clue for {desired_value}: {clue['feature']}={clue['value']} -> {clue['yes']} yes / {clue['no']} no"
+        for clue in filtered
+    ]
+
+
 def set_prompt_options(prompt_version: str | None = None, include_vote_table: bool | None = None) -> None:
     global PROMPT_VERSION, INCLUDE_VOTE_TABLE
     if prompt_version is not None:
@@ -594,23 +650,60 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
                 f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
             )
 
-        user_lines.append("Nearest contrastive neighbor evidence:")
-        user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
-        user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
-        user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
-        user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+        if RETRIEVAL_BACKEND == "kg_typed_contrastive":
+            yes_phylo_selected = _supporting_phylo_neighbor_summaries(
+                phylo_neighbors,
+                phylo_record_map,
+                feature,
+                "1",
+                max_items=2,
+            )
+            no_phylo_selected = _supporting_phylo_neighbor_summaries(
+                phylo_neighbors,
+                phylo_record_map,
+                feature,
+                "0",
+                max_items=2,
+            )
+            yes_geo_selected = _supporting_geo_neighbor_summaries(language, geo_neighbors, feature, "1", max_items=2)
+            no_geo_selected = _supporting_geo_neighbor_summaries(language, geo_neighbors, feature, "0", max_items=2)
 
-        user_lines.append("Target-specific correlated clues (compact):")
-        if clues:
-            for idx, clue in enumerate(clues, start=1):
-                user_lines.append(
-                    f"{idx}) {clue['feature']}={clue['value']} -> target support {clue['yes']} yes / {clue['no']} no"
-                )
+            user_lines.append("Contrastive decision summary:")
+            user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
+            user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
             user_lines.append(
-                f"- Correlated clues leaning: {clue_summary['yes']} yes / {clue_summary['no']} no / {clue_summary['tie']} tie"
+                "- Selected 1-supporters: "
+                + (", ".join(yes_phylo_selected + yes_geo_selected) if (yes_phylo_selected or yes_geo_selected) else "none in selected evidence")
+            )
+            user_lines.extend(_contrastive_clue_lines(clues, "yes", "1"))
+            user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
+            user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+            user_lines.append(
+                "- Selected 0-supporters: "
+                + (", ".join(no_phylo_selected + no_geo_selected) if (no_phylo_selected or no_geo_selected) else "none in selected evidence")
+            )
+            user_lines.extend(_contrastive_clue_lines(clues, "no", "0"))
+            user_lines.append(
+                f"- Correlated clue balance: {clue_summary['yes']} yes / {clue_summary['no']} no / {clue_summary['tie']} tie"
             )
         else:
-            user_lines.append("- No reliable correlated clues with enough support.")
+            user_lines.append("Nearest contrastive neighbor evidence:")
+            user_lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
+            user_lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
+            user_lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
+            user_lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+
+            user_lines.append("Target-specific correlated clues (compact):")
+            if clues:
+                for idx, clue in enumerate(clues, start=1):
+                    user_lines.append(
+                        f"{idx}) {clue['feature']}={clue['value']} -> target support {clue['yes']} yes / {clue['no']} no"
+                    )
+                user_lines.append(
+                    f"- Correlated clues leaning: {clue_summary['yes']} yes / {clue_summary['no']} no / {clue_summary['tie']} tie"
+                )
+            else:
+                user_lines.append("- No reliable correlated clues with enough support.")
 
         user_lines.append(f"Prompt version: {PROMPT_VERSION}")
         user_lines.append("Task:")
@@ -620,6 +713,8 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
         user_lines.append("Reasoning guidance:")
         user_lines.append("- Compare the support for value 0 versus value 1.")
         user_lines.append("- Weigh observed anchor features, Glottolog-tree relations, geographic evidence, and correlated clues together.")
+        if RETRIEVAL_BACKEND == "kg_typed_contrastive":
+            user_lines.append("- Start from the contrastive decision summary; use the detailed evidence blocks to resolve remaining uncertainty.")
         user_lines.append("- Prefer closer genealogical evidence from the same branch or sibling branches before higher shared ancestors.")
         user_lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
         user_lines.append("- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.")
