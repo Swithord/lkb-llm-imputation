@@ -128,6 +128,49 @@ def _normalize_input_record(rec: dict) -> dict:
     )
 
 
+def _slice_to_first_json_object(text: str) -> str | None:
+    raw = text.strip()
+    start = raw.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    seg_start = -1
+
+    for i in range(start, len(raw)):
+        ch = raw[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            if depth == 0:
+                seg_start = i
+            depth += 1
+            continue
+        if ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and seg_start >= 0:
+                segment = raw[seg_start : i + 1]
+                try:
+                    parsed = json.loads(segment)
+                except Exception:
+                    continue
+                if isinstance(parsed, dict):
+                    return segment
+    return None
+
+
 def _extract_json_fields(text: str) -> Tuple[str | None, str | None, str | None]:
     raw = text.strip()
     parsed = None

@@ -34,9 +34,13 @@ clue_support_cache: Dict[Tuple[str, str, str], Tuple[int, int]] = {}
 
 
 def _selection_variant() -> str:
-    if PROMPT_VERSION == "v4_strict_json":
+    if PROMPT_VERSION in {"v4_strict_json", "v4_rag_only_json", "v4_rag_vote_json"}:
         return "v4"
     return "v3"
+
+
+def _is_v4_rag_ablation() -> bool:
+    return PROMPT_VERSION in {"v4_rag_only_json", "v4_rag_vote_json"}
 
 
 def _is_missing(v) -> bool:
@@ -807,15 +811,88 @@ def construct_prompt(language: str, feature: str) -> Tuple[str, str]:
     geo_yes = _nearest_supporting_neighbor(language, geo_candidates, feature, "1", mode="geographic")
     geo_no = _nearest_supporting_neighbor(language, geo_candidates, feature, "0", mode="geographic")
 
-    user_lines.append("Observed typological facts (anchor features):")
-    if anchors:
-        for feat_name, feat_value in anchors:
-            user_lines.append(f"- {feat_name}: {feat_value} (observed)")
-    else:
-        user_lines.append("- (no observed anchor facts)")
-
     allowed = _allowed_values(feature)
-    if PROMPT_VERSION in {"v3_strict_json", "v4_strict_json"}:
+    if _is_v4_rag_ablation():
+        user_lines.append("Selected phylogenetic neighbors (detailed evidence):")
+        user_lines.extend(
+            _format_neighbor_block(
+                language,
+                phylo_neighbors,
+                phylo_candidates,
+                feature,
+                correlated,
+                mode="phylogenetic",
+            )
+        )
+
+        user_lines.append("Selected geographic neighbors (detailed evidence):")
+        user_lines.extend(
+            _format_neighbor_block(
+                language,
+                geo_neighbors,
+                geo_candidates,
+                feature,
+                correlated,
+                mode="geographic",
+            )
+        )
+
+        if PROMPT_VERSION == "v4_rag_vote_json" and INCLUDE_VOTE_TABLE:
+            g = votes["genetic"]
+            geo = votes["geographic"]
+            ov = votes["overall"]
+            user_lines.append("Target-feature vote counts (useful but not decisive):")
+            user_lines.append(
+                f"- Genetic vote: {g['yes']} yes / {g['no']} no / {g['missing']} unk ({g['yes_ratio']:.0%} yes)"
+            )
+            user_lines.append(
+                f"- Geo vote: {geo['yes']} yes / {geo['no']} no / {geo['missing']} unk ({geo['yes_ratio']:.0%} yes)"
+            )
+            user_lines.append(
+                f"- Overall observed votes: {ov['yes']} yes / {ov['no']} no "
+                f"({ov['yes_ratio']:.0%} yes; agreement={ov['agreement_ratio']:.0%})"
+            )
+            user_lines.append(
+                f"- Vote evidence coverage: {ov['yes'] + ov['no']} observed target-feature votes "
+                f"(unknown ignored in decision)."
+            )
+
+        user_lines.append(f"Prompt version: {PROMPT_VERSION}")
+        user_lines.append("Task:")
+        user_lines.append("Predict the missing value for the following feature:")
+        user_lines.append(f"- Feature: {feature}")
+        user_lines.append(f"- Allowed values: {' | '.join(allowed)}")
+        user_lines.append("Reasoning guidance:")
+        user_lines.append("- Use only the retrieved phylogenetic and geographic neighbor evidence shown here.")
+        user_lines.append("- Compare the support for value 0 versus value 1.")
+        user_lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
+        user_lines.append("- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.")
+        user_lines.append("- Do not rely on anchor features, correlated clues, or prevalence priors.")
+        user_lines.append("Output format (STRICT JSON):")
+        user_lines.append("Output ONLY valid JSON.")
+        user_lines.append("Return exactly one minified JSON object on one line with keys: value, confidence, rationale.")
+        user_lines.append("- value: one of the allowed values above")
+        user_lines.append("- confidence: low, medium, or high")
+        user_lines.append("- rationale: at most 20 words")
+        user_lines.append("No Markdown, no prose, no code fences, no trailing text.")
+        user_lines.append("Few-shot examples:")
+        user_lines.append(
+            '{"value":"1","confidence":"medium","rationale":"Closer retrieved neighbors support 1 more strongly than the broader evidence for 0."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"medium","rationale":"Retrieved phylogenetic and geographic evidence consistently favors 0."}'
+        )
+        user_lines.append(
+            '{"value":"0","confidence":"low","rationale":"Retrieved evidence is weak and mixed, so 0 is a cautious choice."}'
+        )
+    elif PROMPT_VERSION in {"v3_strict_json", "v4_strict_json"}:
+        user_lines.append("Observed typological facts (anchor features):")
+        if anchors:
+            for feat_name, feat_value in anchors:
+                user_lines.append(f"- {feat_name}: {feat_value} (observed)")
+        else:
+            user_lines.append("- (no observed anchor facts)")
+
         user_lines.append("Selected phylogenetic neighbors (detailed evidence):")
         user_lines.extend(
             _format_neighbor_block(
