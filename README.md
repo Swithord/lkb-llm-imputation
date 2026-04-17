@@ -7,6 +7,23 @@ Utilities for typological feature imputation with two retrieval paths:
 
 The repo already includes checked-in data under `data/`, a vendored `glottolog/` checkout, benchmark tooling, baseline models, and SLURM launch scripts.
 
+## Code vs Data Boundary
+
+Use this rule of thumb:
+
+- `code/` = logic (Python modules that transform inputs into outputs).
+- `data/` = inputs/derived tables consumed by that logic.
+
+In this repo:
+
+- `code/` contains the legacy URIEL+ pipeline implementation (`preprocessing.py`, `prompting.py`, neighbor builders, correlation utilities).
+- `data/benchmark/` contains benchmark labels and split metadata.
+- `data/derived/` contains processed tables used at runtime (metadata, neighbor JSONs, typological matrix).
+- `data/features/` contains feature-level artifacts (correlation outputs, feature-name maps, top-k maps).
+- `data/splits/` contains split/mask artifacts used by baselines and evaluation.
+
+Operationally: if a file is executed (`python ...`) it belongs in `code/`; if it is loaded by those scripts as an input table/JSON/CSV it belongs in `data/`.
+
 ## Repository Structure
 
 ```text
