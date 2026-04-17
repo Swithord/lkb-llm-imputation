@@ -72,12 +72,8 @@ def _parse_prediction(obj: dict, mode: str) -> Tuple[str | None, str | None, str
     return (value, conf, rat)
 
 
-def _init_groups() -> Dict[str, Dict[str, int]]:
-    return {
-        "overall": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
-        "high": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
-        "low": {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0},
-    }
+def _new_group_stats() -> Dict[str, int]:
+    return {"n": 0, "correct": 0, "parsed": 0, "high_conf_n": 0, "high_conf_correct": 0, "rationale_ok": 0}
 
 
 def _evaluate_subset(
@@ -87,7 +83,7 @@ def _evaluate_subset(
     mode: str,
     conf_map: Dict[str, float],
 ) -> dict:
-    groups = _init_groups()
+    groups: Dict[str, Dict[str, int]] = {"overall": _new_group_stats()}
     brier_sum = 0.0
     brier_n = 0
     ece_bins = [{"n": 0, "acc_sum": 0.0, "conf_sum": 0.0} for _ in range(10)]
@@ -95,6 +91,8 @@ def _evaluate_subset(
     for gid in ids:
         grec = gold[gid]
         group = grec["resource_group"]
+        if group not in groups:
+            groups[group] = _new_group_stats()
         gval = str(grec["gold_value"])
         allowed = set(str(x) for x in grec.get("allowed_values", []))
         pval, pconf, prat = _parse_prediction(pred.get(gid, {}), mode)
@@ -200,17 +198,19 @@ def _split_ids(
         train_ids = ids[cut:]
         return train_ids, test_ids
 
-    by_group_lang = {"high": [], "low": []}
-    seen = {"high": set(), "low": set()}
+    by_group_lang: Dict[str, List[str]] = {}
+    seen: Dict[str, set[str]] = {}
     for rec in gold.values():
         g = rec["resource_group"]
         lang = rec["language"]
-        if g in by_group_lang and lang not in seen[g]:
+        by_group_lang.setdefault(g, [])
+        seen.setdefault(g, set())
+        if lang not in seen[g]:
             seen[g].add(lang)
             by_group_lang[g].append(lang)
 
     test_langs = set()
-    for g in ("high", "low"):
+    for g in sorted(by_group_lang):
         langs = by_group_lang[g]
         rng.shuffle(langs)
         if not langs:

@@ -422,20 +422,18 @@ def main() -> None:
     groups_path = Path(args.groups_json)
     if groups_path.exists():
         groups = json.loads(groups_path.read_text(encoding="utf-8"))
-        high = set(groups.get("high", []))
-        low = set(groups.get("low", []))
-        report["hr_lr_breakdown"] = {
+        report["resource_group_breakdown"] = {
             "mean_test": {
-                "high": _metrics_for_language_subset(mean_test, high),
-                "low": _metrics_for_language_subset(mean_test, low),
+                label: _metrics_for_language_subset(mean_test, set(langs))
+                for label, langs in groups.items()
             },
             "random_test": {
-                "high": _metrics_for_language_subset(random_test, high),
-                "low": _metrics_for_language_subset(random_test, low),
+                label: _metrics_for_language_subset(random_test, set(langs))
+                for label, langs in groups.items()
             },
             "knn_test": {
-                "high": _metrics_for_language_subset(knn_test, high),
-                "low": _metrics_for_language_subset(knn_test, low),
+                label: _metrics_for_language_subset(knn_test, set(langs))
+                for label, langs in groups.items()
             },
         }
 

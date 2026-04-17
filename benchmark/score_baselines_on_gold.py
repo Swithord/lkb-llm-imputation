@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Any
@@ -51,6 +53,118 @@ def _read_gold_rows(path: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _stable_row_seed(seed: int, language: str) -> int:
+    digest = hashlib.sha256(f"{seed}:{language}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=False)
+
+
+def _budget_map_from_args(
+    enabled: bool,
+    budget_lrl: int,
+    budget_mrl: int,
+    budget_hrl: int,
+) -> dict[str, int]:
+    if not enabled:
+        return {}
+    out = {
+        "lrl": int(budget_lrl),
+        "mrl": int(budget_mrl),
+        "hrl": int(budget_hrl),
+    }
+    for group, budget in out.items():
+        if budget < 0:
+            raise ValueError(f"Budget for {group} must be >= 0; got {budget}.")
+    return out
+
+
+def _load_language_to_group(gold_rows: list[dict[str, Any]], groups_json: str | None) -> dict[str, str]:
+    if groups_json:
+        payload = json.loads(Path(groups_json).read_text(encoding="utf-8"))
+        lang_to_group: dict[str, str] = {}
+        for group, langs in payload.items():
+            if not isinstance(langs, list):
+                continue
+            for lang in langs:
+                key = str(lang)
+                prev = lang_to_group.get(key)
+                if prev is not None and prev != str(group):
+                    raise ValueError(f"Language appears in multiple groups in {groups_json}: {key}")
+                lang_to_group[key] = str(group)
+        return lang_to_group
+
+    lang_to_group: dict[str, str] = {}
+    for rec in gold_rows:
+        lang = str(rec["language"])
+        group = str(rec.get("resource_group", ""))
+        prev = lang_to_group.get(lang)
+        if prev is not None and prev != group:
+            raise ValueError(f"Inconsistent resource_group for language {lang}: {prev} vs {group}")
+        lang_to_group[lang] = group
+    return lang_to_group
+
+
+def _build_budget_visible_mask(
+    observed: np.ndarray,
+    index: pd.Index,
+    lang_to_group: dict[str, str],
+    budgets_by_group: dict[str, int],
+    budget_seed: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    visible = observed.copy()
+    row_idx = {str(lang): i for i, lang in enumerate(index.astype(str).tolist())}
+    n_cols = observed.shape[1]
+
+    group_stats: dict[str, Any] = {}
+    for group, budget in budgets_by_group.items():
+        affected = 0
+        originally_observed = 0
+        kept_observed = 0
+        hidden_observed = 0
+        for lang, lang_group in lang_to_group.items():
+            if lang_group != group:
+                continue
+            ri = row_idx.get(lang)
+            if ri is None:
+                continue
+            obs_cols = np.flatnonzero(observed[ri])
+            n_obs = int(obs_cols.size)
+            if n_obs == 0:
+                continue
+            affected += 1
+            originally_observed += n_obs
+            keep_n = min(int(budget), n_obs)
+            if keep_n == n_obs:
+                kept_observed += n_obs
+                continue
+            rng = random.Random(_stable_row_seed(budget_seed, lang))
+            keep_cols = rng.sample(obs_cols.tolist(), keep_n) if keep_n > 0 else []
+            row_visible = np.zeros(n_cols, dtype=bool)
+            if keep_cols:
+                row_visible[np.asarray(keep_cols, dtype=int)] = True
+            visible[ri] = row_visible
+            kept_observed += keep_n
+            hidden_observed += (n_obs - keep_n)
+
+        group_stats[group] = {
+            "budget": int(budget),
+            "languages_affected": int(affected),
+            "originally_observed_cells": int(originally_observed),
+            "kept_observed_cells": int(kept_observed),
+            "hidden_observed_cells": int(hidden_observed),
+        }
+
+    meta = {
+        "enabled": bool(budgets_by_group),
+        "budgets_by_group": {k: int(v) for k, v in budgets_by_group.items()},
+        "seed": int(budget_seed),
+        "total_observed_cells": int(observed.sum()),
+        "total_visible_observed_cells": int((observed & visible).sum()),
+        "total_hidden_observed_cells": int((observed & (~visible)).sum()),
+        "group_stats": group_stats,
+    }
+    return visible, meta
+
+
 def _prob_to_confidence(prob_correct: float) -> str:
     if prob_correct >= 0.8:
         return "high"
@@ -95,6 +209,19 @@ def _subset_metrics(
     return compute_binary_metrics(y_true[keep], y_pred[keep], y_prob[keep], include_ece=True, ece_bins=10)
 
 
+def _metrics_by_resource_group(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_prob: np.ndarray,
+    groups: list[str],
+) -> dict[str, dict[str, float]]:
+    labels = sorted({label for label in groups if label})
+    return {
+        label: _subset_metrics(y_true, y_pred, y_prob, groups, label)
+        for label in labels
+    }
+
+
 def _records_from_run_result(
     baseline_name: str,
     gold_rows: list[dict[str, Any]],
@@ -114,7 +241,7 @@ def _records_from_run_result(
         p = float(np.clip(float(pred.get("probability", 0.5)), 0.0, 1.0))
         val = str(pred["value"])
         conf = str(pred.get("confidence", "low"))
-        rationale = f"{baseline_name} baseline on gold_eval_2 ids"
+        rationale = f"{baseline_name} baseline on benchmark gold ids"
         out.append(
             {
                 "id": rec["id"],
@@ -145,6 +272,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Score baselines directly on benchmark gold IDs for apples-to-apples fairness.")
     p.add_argument("--typology_csv", type=str, default="data/derived/uriel+_typological.csv")
     p.add_argument("--gold", type=str, default="data/benchmark/gold_eval_2.jsonl")
+    p.add_argument(
+        "--resource_groups_json",
+        type=str,
+        default=None,
+        help="Optional mapping of all languages to resource groups (group -> language list) for budgeting.",
+    )
     p.add_argument("--out_dir", type=str, default="artifacts/prediction/benchmark")
     p.add_argument("--knn_k", type=int, default=11)
     p.add_argument("--knn_metric", type=str, default="cosine", choices=["cosine", "jaccard"])
@@ -166,13 +299,30 @@ def main() -> None:
         choices=["fixed", "feature_prevalence", "global_prevalence"],
     )
     p.add_argument("--softimpute_decision_threshold", type=float, default=0.5)
+    p.add_argument(
+        "--budget_protocol",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Apply per-group per-language context budgets before baseline fitting.",
+    )
+    p.add_argument("--budget_lrl", type=int, default=5)
+    p.add_argument("--budget_mrl", type=int, default=20)
+    p.add_argument("--budget_hrl", type=int, default=80)
+    p.add_argument("--budget_seed", type=int, default=17)
+    p.add_argument(
+        "--budget_eval_requirement",
+        type=str,
+        default="strict",
+        choices=["none", "warn", "strict"],
+        help="How to enforce that eval rows are masked by the budget protocol.",
+    )
     p.add_argument("--report_out", type=str, default="artifacts/prediction/benchmark/report_baselines_on_gold_eval_2.json")
     args = p.parse_args()
 
     typology_df = pd.read_csv(args.typology_csv, index_col=0)
     typology_df.index = typology_df.index.astype(str)
     values = typology_df.to_numpy().astype(float)
-    observed = values != -1
+    observed = (values != -1) & (~pd.isna(values))
     n_rows, n_cols = typology_df.shape
 
     gold_rows = _read_gold_rows(args.gold)
@@ -195,7 +345,50 @@ def main() -> None:
             raise ValueError(f"Gold entry is not observed in typology matrix: {lang}/{feat}")
         eval_mask[ri, ci] = True
 
-    train_mask = observed & (~eval_mask)
+    budgets_by_group = _budget_map_from_args(
+        enabled=args.budget_protocol,
+        budget_lrl=args.budget_lrl,
+        budget_mrl=args.budget_mrl,
+        budget_hrl=args.budget_hrl,
+    )
+    if budgets_by_group:
+        lang_to_group = _load_language_to_group(gold_rows, args.resource_groups_json)
+        budget_visible_mask, budget_meta = _build_budget_visible_mask(
+            observed=observed,
+            index=typology_df.index,
+            lang_to_group=lang_to_group,
+            budgets_by_group=budgets_by_group,
+            budget_seed=args.budget_seed,
+        )
+        budget_hidden_mask = observed & (~budget_visible_mask)
+        budget_violations: list[str] = []
+        for rec in gold_rows:
+            ri = row_idx[rec["language"]]
+            ci = col_idx[rec["feature"]]
+            if not budget_hidden_mask[ri, ci]:
+                budget_violations.append(rec["id"])
+        if budget_violations:
+            msg = (
+                f"{len(budget_violations)} gold rows are not masked by the budget protocol. "
+                f"Example IDs: {budget_violations[:5]}"
+            )
+            if args.budget_eval_requirement == "strict":
+                raise ValueError(msg)
+            if args.budget_eval_requirement == "warn":
+                print(f"[WARN] {msg}")
+        visible_base_mask = budget_visible_mask
+    else:
+        budget_meta = {
+            "enabled": False,
+            "total_observed_cells": int(observed.sum()),
+            "total_visible_observed_cells": int(observed.sum()),
+            "total_hidden_observed_cells": 0,
+            "group_stats": {},
+        }
+        budget_violations = []
+        visible_base_mask = observed.copy()
+
+    train_mask = visible_base_mask & (~eval_mask)
     visible_mask = train_mask.copy()
 
     # Mean / Random / kNN baselines on the same eval IDs.
@@ -259,7 +452,7 @@ def main() -> None:
         pred = 1 if p1 >= float(soft_thresholds[ci]) else 0
         prob_correct = p1 if pred == 1 else (1.0 - p1)
         conf = _prob_to_confidence(prob_correct)
-        rationale = "softimpute baseline on gold_eval_2 ids"
+        rationale = "softimpute baseline on benchmark gold ids"
         soft_rows.append(
             {
                 "id": rec["id"],
@@ -293,15 +486,28 @@ def main() -> None:
     _write_jsonl(pred_files["knn"], knn_rows)
     _write_jsonl(pred_files["softimpute"], soft_rows)
 
+    protocol_text = (
+        "Train context uses budgeted visible entries per language/resource group and excludes target gold IDs."
+        if budgets_by_group
+        else "Train context uses all observed entries except the target gold IDs."
+    )
+
     report: dict[str, Any] = {
         "setup": {
             "typology_csv": args.typology_csv,
             "gold": args.gold,
             "n_gold": len(gold_rows),
-            "protocol": "Train context uses all observed entries except the target gold_eval_2 IDs.",
+            "protocol": protocol_text,
+            "resource_groups_json": args.resource_groups_json,
             "knn_k": args.knn_k,
             "knn_metric": args.knn_metric,
             "seed": args.seed,
+            "train_visible_cells_after_protocol": int(train_mask.sum()),
+            "eval_cells": int(eval_mask.sum()),
+            "budget_protocol": budget_meta,
+            "budget_eval_requirement": args.budget_eval_requirement if budgets_by_group else "none",
+            "budget_eval_violations_n": int(len(budget_violations)),
+            "budget_eval_violation_examples": budget_violations[:10],
             "softimpute_input_transform": args.softimpute_input_transform,
             "softimpute_threshold_mode": args.softimpute_threshold_mode,
             "softimpute_decision_threshold": (
@@ -316,11 +522,11 @@ def main() -> None:
             "knn": compute_binary_metrics(knn_true, knn_pred, knn_prob, include_ece=True, ece_bins=10),
             "softimpute": compute_binary_metrics(soft_true_arr, soft_pred_arr, soft_prob_arr, include_ece=True, ece_bins=10),
         },
-        "hr_lr_breakdown_binary": {
-            "mean": {"high": _subset_metrics(mean_true, mean_pred, mean_prob, groups, "high"), "low": _subset_metrics(mean_true, mean_pred, mean_prob, groups, "low")},
-            "random": {"high": _subset_metrics(rnd_true, rnd_pred, rnd_prob, groups, "high"), "low": _subset_metrics(rnd_true, rnd_pred, rnd_prob, groups, "low")},
-            "knn": {"high": _subset_metrics(knn_true, knn_pred, knn_prob, groups, "high"), "low": _subset_metrics(knn_true, knn_pred, knn_prob, groups, "low")},
-            "softimpute": {"high": _subset_metrics(soft_true_arr, soft_pred_arr, soft_prob_arr, groups, "high"), "low": _subset_metrics(soft_true_arr, soft_pred_arr, soft_prob_arr, groups, "low")},
+        "resource_group_breakdown_binary": {
+            "mean": _metrics_by_resource_group(mean_true, mean_pred, mean_prob, groups),
+            "random": _metrics_by_resource_group(rnd_true, rnd_pred, rnd_prob, groups),
+            "knn": _metrics_by_resource_group(knn_true, knn_pred, knn_prob, groups),
+            "softimpute": _metrics_by_resource_group(soft_true_arr, soft_pred_arr, soft_prob_arr, groups),
         },
     }
 

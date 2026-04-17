@@ -11,9 +11,11 @@ The repo already includes checked-in data under `data/`, a vendored `glottolog/`
 
 ```text
 .
+├── artifacts/          Generated outputs: predictions, reports, logs, KG resources
 ├── baselines/          Classical baselines: random, mean, kNN, SoftImpute
 ├── benchmark/          Benchmark building, inference, evaluation, calibration, analysis
-├── code/               Legacy preprocessing and prompt construction
+├── benchmark_sweeps/   Sweep outputs and helper artifacts for benchmark experiments
+├── code/               Legacy URIEL+ preprocessing and prompt construction
 ├── data/
 │   ├── benchmark/      Gold labels and language-group definitions
 │   ├── derived/        Metadata and neighbor tables used by prompting
@@ -21,8 +23,12 @@ The repo already includes checked-in data under `data/`, a vendored `glottolog/`
 │   └── splits/         Standard language splits and MCAR masks
 ├── glottolog/          Vendored Glottolog checkout used for metadata/tree traversal
 ├── glottolog-tree/     Tree-aware prompting, KG build/load/retrieval code
-├── scripts/            SLURM batch wrappers
-└── test/               Regression tests for retrieval, preprocessing, and baselines
+├── prediction/         Legacy checked-in prediction snapshots
+├── scripts/            SLURM entry points and coverage split helper launchers
+├── test/               Regression tests for retrieval, preprocessing, and baselines
+├── preprocess.py       Compatibility entry point for preprocessing workflows
+├── requirements.txt    Python dependency pins (except cluster-specific torch build)
+└── result.md           Current consolidated benchmark summary table
 ```
 
 ## Code vs Data Boundary
@@ -82,7 +88,7 @@ Notes:
 The SLURM scripts are written for the lab's current cluster defaults:
 
 - `--account=rrg-annielee`
-- `--gres=gpu:h100:1`
+- `--gpus=h100_3g.40gb:1`
 - `module load python`
 - `module load cuda`
 - repo-local virtualenv at `.venv`
@@ -94,7 +100,7 @@ Resource override example:
 ```bash
 sbatch \
   --account=your-account \
-  --gres=gpu:a100:1 \
+  --gpus=a100:1 \
   --cpus-per-task=8 \
   --mem=80G \
   --export=ALL,MODEL=meta-llama/Llama-3.1-8B-Instruct \
@@ -149,10 +155,10 @@ Use the SLURM wrapper:
 sbatch --export=ALL,MODE=benchmark,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
 ```
 
-Run the same wrapper on the coverage-based benchmark:
+Run the same wrapper on the checked-in coverage benchmark:
 
 ```bash
-sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
+sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_bottomk200_equal2233_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
 ```
 
 Useful overrides:
@@ -179,7 +185,7 @@ python benchmark/build_prompts_from_gold.py \
   --out artifacts/prediction/prompts_eval_v3_strict_json_vote.jsonl
 ```
 
-For local debugging on the coverage-based benchmark, swap the gold path:
+For local debugging on the checked-in coverage benchmark, swap the gold path:
 
 ```bash
 python benchmark/build_prompts_from_gold.py \
@@ -189,10 +195,10 @@ python benchmark/build_prompts_from_gold.py \
   --topk_csv data/features/topk_per_feature.csv \
   --gen data/derived/genetic_neighbours.json \
   --geo data/derived/geographic_neighbours.json \
-  --gold data/benchmark/gold_eval_coverage_resource_v1.jsonl \
+  --gold data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl \
   --prompt_version v3_strict_json \
   --include_vote_table \
-  --out artifacts/prediction/coverage_resource_v1/prompts_eval_v3_strict_json_vote.jsonl
+  --out artifacts/prediction/coverage_bottomk200_equal2233_v1/prompts_eval_v3_strict_json_vote.jsonl
 ```
 
 ### 4. Run the Glottolog-tree or KG-backed benchmark
@@ -203,10 +209,10 @@ Use the Glottolog-tree SLURM wrapper:
 sbatch --export=ALL,MODE=benchmark,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
 ```
 
-Run the same wrapper on the coverage-based benchmark:
+Run the same wrapper on the checked-in coverage benchmark:
 
 ```bash
-sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
+sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_bottomk200_equal2233_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
 ```
 
 Useful overrides:
@@ -243,7 +249,7 @@ python benchmark/build_prompts_from_gold.py \
   --out artifacts/prediction/benchmark_glottolog/prompts_eval_v5_glottolog_tree_json_vote_kg_flat.jsonl
 ```
 
-Coverage-based benchmark variant:
+Checked-in coverage benchmark variant:
 
 ```bash
 python benchmark/build_prompts_from_gold.py \
@@ -257,10 +263,10 @@ python benchmark/build_prompts_from_gold.py \
   --retrieval_backend kg_flat \
   --kg_nodes artifacts/resources/kg_nodes.jsonl \
   --kg_edges artifacts/resources/kg_edges.jsonl \
-  --gold data/benchmark/gold_eval_coverage_resource_v1.jsonl \
+  --gold data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl \
   --prompt_version v5_glottolog_tree_json \
   --include_vote_table \
-  --out artifacts/prediction/coverage_resource_v1/prompts_eval_v5_glottolog_tree_json_vote_kg_flat.jsonl
+  --out artifacts/prediction/coverage_bottomk200_equal2233_v1/prompts_eval_v5_glottolog_tree_json_vote_kg_flat.jsonl
 ```
 
 Valid `--retrieval_backend` values used in this repo are:
@@ -268,6 +274,8 @@ Valid `--retrieval_backend` values used in this repo are:
 - `legacy`
 - `kg_flat`
 - `kg_typed`
+- `kg_typed_contrastive`
+- `hybrid_flat_kg`
 
 ## Rebuilding Data From Scratch
 
@@ -333,45 +341,6 @@ python glottolog-tree/kg_builder.py \
   --edges_out artifacts/resources/kg_edges.jsonl
 ```
 
-### 4. Build a fresh high/low-resource benchmark split
-
-```bash
-python benchmark/build_benchmark.py \
-  --prompting_py glottolog-tree/prompting.py \
-  --typ data/derived/uriel+_typological.csv \
-  --meta data/derived/metadata.csv \
-  --topk_csv data/features/topk_per_feature.csv \
-  --gen data/derived/genetic_neighbours.json \
-  --gen_detail data/derived/genetic_neighbours_detailed.json \
-  --geo data/derived/geographic_neighbours.json \
-  --high_n 50 \
-  --low_n 50 \
-  --per_language 20 \
-  --top_n 10 \
-  --prompt_version v5_glottolog_tree_json
-```
-
-This writes prompts, examples, gold labels, and language groups under `data/benchmark/`.
-
-Important protocol note:
-- the checked-in frozen benchmark used for reported comparisons is `data/benchmark/gold_eval_2.jsonl`
-- its associated language split file is `data/benchmark/language_groups_2.json`
-- if you rebuild the benchmark, do not treat the new output as directly comparable to reported numbers unless you intentionally overwrite or re-freeze the protocol
-
-### 5. Build the coverage-based HRL/MRL/LRL benchmark
-
-```bash
-python benchmark/build_urielplus_resource_benchmark.py
-```
-
-This writes a new non-frozen benchmark snapshot under `data/benchmark/`:
-
-- `gold_eval_coverage_resource_v1.jsonl`
-- `prompts_eval_coverage_resource_v1.jsonl`
-- `examples_eval_coverage_resource_v1.jsonl`
-- `language_groups_coverage_resource_v1.json`
-- `manifest_coverage_resource_v1.json`
-
 ## Benchmark Analysis
 
 Use `benchmark/evaluate_benchmark.py` to score benchmark predictions:
@@ -383,13 +352,13 @@ python benchmark/evaluate_benchmark.py \
   --report_out artifacts/prediction/report_eval_v3_strict_json_vote.json
 ```
 
-Coverage-based benchmark example:
+Checked-in coverage benchmark example:
 
 ```bash
 python benchmark/evaluate_benchmark.py \
-  --gold data/benchmark/gold_eval_coverage_resource_v1.jsonl \
-  --pred artifacts/prediction/coverage_resource_v1/predictions_eval_v5_glottolog_tree_json_vote.jsonl \
-  --report_out artifacts/prediction/coverage_resource_v1/report_eval_v5_glottolog_tree_json_vote.json
+  --gold data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl \
+  --pred artifacts/prediction/coverage_bottomk200_equal2233_v1/predictions_eval_v5_glottolog_tree_json_vote.jsonl \
+  --report_out artifacts/prediction/coverage_bottomk200_equal2233_v1/report_eval_v5_glottolog_tree_json_vote.json
 ```
 
 The evaluator reports:
@@ -405,39 +374,37 @@ It emits both:
 - `normalized`: metrics after parsing and normalizing `value`, `confidence`, and `rationale`
 - `strict_raw`: metrics parsed directly from raw model output
 
-## Frozen Benchmark Protocol
+## Benchmark Protocol
 
-The current repo supports many experiment paths, but only one benchmark artifact set is frozen for direct method comparison:
+The repo currently uses two canonical benchmark artifact sets:
+
+### 1. Frozen benchmark (`frozen_v2`, historical)
 
 - gold file: `data/benchmark/gold_eval_2.jsonl`
 - language groups: `data/benchmark/language_groups_2.json`
 - item count: `1433`
 - resource groups present: `high`, `low`
 
+### 2. Coverage benchmark (`coverage_bottomk200_equal2233_v1`, newer)
+
+- gold file: `data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl`
+- language groups: `data/benchmark/language_groups_coverage_bottomk200_equal2233_v1.json`
+- manifest: `data/benchmark/manifest_coverage_bottomk200_equal2233_v1.json`
+- item count: `6699`
+- resource groups present: `lrl`, `mrl`, `hrl`
+
 What is fixed when you use the standard benchmark scripts:
 - sampled evaluation items
-- high/low split membership
+- resource-group membership for the chosen benchmark file
 - JSON output schema
 - benchmark metrics
 
 What is not fully standardized by the builder:
-- there is no `mrl` tier
+- `frozen_v2` has no `mrl` tier
 - feature-type balance is not explicitly enforced
 - family-balance or family-exclusion constraints are not explicitly enforced
 
-So the reported KG comparisons are standardized with respect to one frozen evaluation set, but not in the stronger sense of a fully stratified benchmark design.
-
-## Coverage-Based Benchmark Snapshot
-
-The repo also includes a separate non-frozen benchmark snapshot for coverage-based `lrl/mrl/hrl` analysis:
-
-- gold file: `data/benchmark/gold_eval_coverage_resource_v1.jsonl`
-- language groups: `data/benchmark/language_groups_coverage_resource_v1.json`
-- manifest: `data/benchmark/manifest_coverage_resource_v1.json`
-- item count: `10000`
-- resource groups present: `lrl`, `mrl`, `hrl`
-
-Use this benchmark for new reruns and analysis. Do not mix its results with `gold_eval_2` in the same direct-comparison table.
+So reported comparisons are standardized within each benchmark artifact set, but not in the stronger sense of a fully stratified benchmark design. Do not mix results from `gold_eval_2` and `gold_eval_coverage_bottomk200_equal2233_v1` in the same direct-comparison table.
 
 ## Frozen Benchmark Snapshot
 
@@ -543,8 +510,6 @@ Direct `sbatch` examples:
 ```bash
 sbatch --export=ALL,MODE=benchmark,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
 sbatch --export=ALL,MODE=benchmark,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
-sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
-sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
 sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_sparse_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
 sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_sparse_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
 sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_bottomk200_equal2233_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch

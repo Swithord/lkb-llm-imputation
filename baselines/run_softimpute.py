@@ -414,11 +414,9 @@ def main() -> None:
     hr_lr = None
     if groups_path.exists():
         groups = json.loads(groups_path.read_text(encoding="utf-8"))
-        high = set(groups.get("high", []))
-        low = set(groups.get("low", []))
         hr_lr = {
-            "high": _metrics_for_subset(y_true_test, y_pred_test, y_prob_test, langs_test, high),
-            "low": _metrics_for_subset(y_true_test, y_pred_test, y_prob_test, langs_test, low),
+            label: _metrics_for_subset(y_true_test, y_pred_test, y_prob_test, langs_test, set(langs))
+            for label, langs in groups.items()
         }
 
     metrics_payload: dict[str, Any] = {

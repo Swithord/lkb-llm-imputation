@@ -79,37 +79,34 @@ def main() -> None:
                 "n": 0,
                 "parsed": 0,
                 "correct": 0,
-                "high_n": 0,
-                "high_correct": 0,
-                "low_n": 0,
-                "low_correct": 0,
+                "by_group": {},
             },
         )
         obj["n"] += 1
         obj["parsed"] += int(parsed)
         obj["correct"] += int(correct)
-        if group == "high":
-            obj["high_n"] += 1
-            obj["high_correct"] += int(correct)
-        elif group == "low":
-            obj["low_n"] += 1
-            obj["low_correct"] += int(correct)
+        group_stats = obj["by_group"].setdefault(group, {"n": 0, "correct": 0})
+        group_stats["n"] += 1
+        group_stats["correct"] += int(correct)
 
     rows = []
     for feat, s in stats.items():
         if s["n"] < args.min_n:
             continue
+        by_group = {
+            label: {
+                "n": group_stats["n"],
+                "accuracy": _safe_div(group_stats["correct"], group_stats["n"]),
+            }
+            for label, group_stats in sorted(s["by_group"].items())
+        }
         rows.append(
             {
                 "feature": feat,
                 "n": s["n"],
                 "parsed_rate": _safe_div(s["parsed"], s["n"]),
                 "accuracy": _safe_div(s["correct"], s["n"]),
-                "high_n": s["high_n"],
-                "high_accuracy": _safe_div(s["high_correct"], s["high_n"]),
-                "low_n": s["low_n"],
-                "low_accuracy": _safe_div(s["low_correct"], s["low_n"]),
-                "gap_high_minus_low": _safe_div(s["high_correct"], s["high_n"]) - _safe_div(s["low_correct"], s["low_n"]),
+                "by_group": by_group,
             }
         )
 
