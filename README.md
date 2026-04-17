@@ -7,23 +7,6 @@ Utilities for typological feature imputation with two retrieval paths:
 
 The repo already includes checked-in data under `data/`, a vendored `glottolog/` checkout, benchmark tooling, baseline models, and SLURM launch scripts.
 
-## Code vs Data Boundary
-
-Use this rule of thumb:
-
-- `code/` = logic (Python modules that transform inputs into outputs).
-- `data/` = inputs/derived tables consumed by that logic.
-
-In this repo:
-
-- `code/` contains the legacy URIEL+ pipeline implementation (`preprocessing.py`, `prompting.py`, neighbor builders, correlation utilities).
-- `data/benchmark/` contains benchmark labels and split metadata.
-- `data/derived/` contains processed tables used at runtime (metadata, neighbor JSONs, typological matrix).
-- `data/features/` contains feature-level artifacts (correlation outputs, feature-name maps, top-k maps).
-- `data/splits/` contains split/mask artifacts used by baselines and evaluation.
-
-Operationally: if a file is executed (`python ...`) it belongs in `code/`; if it is loaded by those scripts as an input table/JSON/CSV it belongs in `data/`.
-
 ## Repository Structure
 
 ```text
@@ -41,6 +24,37 @@ Operationally: if a file is executed (`python ...`) it belongs in `code/`; if it
 ├── scripts/            SLURM batch wrappers
 └── test/               Regression tests for retrieval, preprocessing, and baselines
 ```
+
+## Code vs Data Boundary
+
+Use this rule of thumb:
+
+- `code/` = logic (Python modules that transform inputs into outputs).
+- `data/` = inputs/derived tables consumed by that logic.
+
+In this repo:
+
+- `code/` contains the legacy URIEL+ pipeline implementation (`preprocessing.py`, `prompting.py`, neighbor builders, correlation utilities).
+- `data/benchmark/` contains benchmark labels and split metadata.
+- `data/derived/` contains processed tables used at runtime (metadata, neighbor JSONs, typological matrix).
+- `data/features/` contains feature-level artifacts (correlation outputs, feature-name maps, top-k maps).
+- `data/splits/` contains split/mask artifacts used by baselines and evaluation.
+
+Operationally: if a file is executed (`python ...`) it belongs in `code/`; if it is loaded by those scripts as an input table/JSON/CSV it belongs in `data/`.
+
+## Canonical Split Files
+
+### Model-masking/train split files (`data/splits/`)
+
+- Legacy/common split: `data/splits/splits_v1.json`
+- MCAR mask used with it: `data/splits/mask_mcar20_seed42.json`
+
+### Benchmark evaluation splits (`data/benchmark/`)
+
+- Legacy/frozen benchmark (`frozen_v2`): `data/benchmark/gold_eval_2.jsonl`
+  with groups in `data/benchmark/language_groups_2.json`
+- Newer coverage benchmark (currently checked in): `data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl`
+  with groups in `data/benchmark/language_groups_coverage_bottomk200_equal2233_v1.json`
 
 ## Environment Setup
 
@@ -429,6 +443,9 @@ Use this benchmark for new reruns and analysis. Do not mix its results with `gol
 
 The table below summarizes representative results on the frozen benchmark `data/benchmark/gold_eval_2.jsonl`.
 
+This section is a historical frozen (`frozen_v2`) snapshot.
+For the latest results on the newer split (`coverage_bottomk200_equal2233_v1`), use `result.md`.
+
 All rows use the same:
 
 - evaluation items
@@ -514,12 +531,14 @@ python benchmark/eval_prompting.py \
 
 ## SLURM Entry Points
 
-There are two batch wrappers in `scripts/`:
+There are two base batch wrappers plus coverage-split launch helpers in `scripts/`:
 
 - `scripts/run_eval.sbatch`: legacy prompt benchmark (`code/prompting.py`)
 - `scripts/run_glottolog_benchmark.sbatch`: tree/KG benchmark (`glottolog-tree/prompting.py`)
+- `scripts/run_coverage_bottomk200_equal2233_v1.sh`: helper for the newer coverage split (`coverage_bottomk200_equal2233_v1`) to build benchmark files, run baseline scoring, and submit SLURM jobs
+- `scripts/run_coverage_sparse_resource_v1.sh`: helper for the sparse-resource coverage split (`coverage_sparse_resource_v1`)
 
-Examples:
+Direct `sbatch` examples:
 
 ```bash
 sbatch --export=ALL,MODE=benchmark,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
@@ -528,17 +547,35 @@ sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_resource_v1,MODEL=
 sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
 sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_sparse_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
 sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_sparse_resource_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
+sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_bottomk200_equal2233_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct scripts/run_eval.sbatch
+sbatch --export=ALL,MODE=benchmark,BENCHMARK_VARIANT=coverage_bottomk200_equal2233_v1,MODEL=meta-llama/Llama-3.1-8B-Instruct,RETRIEVAL_BACKEND=kg_flat scripts/run_glottolog_benchmark.sbatch
+```
+
+Coverage helper-script examples:
+
+```bash
+# Newer bottom-k coverage split
+bash scripts/run_coverage_bottomk200_equal2233_v1.sh build
+bash scripts/run_coverage_bottomk200_equal2233_v1.sh baselines
+bash scripts/run_coverage_bottomk200_equal2233_v1.sh legacy_job
+bash scripts/run_coverage_bottomk200_equal2233_v1.sh kg_job kg_typed_contrastive
+
+# Sparse-resource split
+bash scripts/run_coverage_sparse_resource_v1.sh build
+bash scripts/run_coverage_sparse_resource_v1.sh baselines
+bash scripts/run_coverage_sparse_resource_v1.sh legacy_job
+bash scripts/run_coverage_sparse_resource_v1.sh kg_job kg_flat
 ```
 
 Useful environment variables accepted by the scripts:
 
 - `MODE=benchmark|full|all`
-- `BENCHMARK_VARIANT=frozen_v2|coverage_resource_v1|coverage_sparse_resource_v1|custom`
+- `BENCHMARK_VARIANT=frozen_v2|coverage_resource_v1|coverage_sparse_resource_v1|coverage_bottomk200_equal2233_v1|custom`
 - `MODEL=<hf model id>`
 - `PROMPT_VERSION=<prompt version>`
 - `OUT_DIR=<artifact directory>`
 - `GOLD=<gold jsonl path>`
-- `RETRIEVAL_BACKEND=legacy|kg_flat|kg_typed` for the Glottolog-tree script
+- `RETRIEVAL_BACKEND=legacy|kg_flat|kg_typed|kg_typed_contrastive|hybrid_flat_kg` for the Glottolog-tree script
 - `VENV_PATH=<virtualenv path>`
 - `PYTHON_MODULE=<module name>` and `CUDA_MODULE=<module name>`
 - `EXTRA_MODULES="<space separated module names>"`
@@ -546,13 +583,14 @@ Useful environment variables accepted by the scripts:
 - `BATCH_SIZE=<int>`
 - `MAX_NEW_TOKENS=<int>`
 
-Score the benchmark baselines directly on the coverage-based benchmark with:
+Score the benchmark baselines directly on the newer coverage-bottomk benchmark with:
 
 ```bash
 python benchmark/score_baselines_on_gold.py \
-  --gold data/benchmark/gold_eval_coverage_resource_v1.jsonl \
-  --out_dir artifacts/prediction/coverage_resource_v1/baselines \
-  --report_out artifacts/prediction/coverage_resource_v1/report_baselines_on_gold.json
+  --gold data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl \
+  --resource_groups_json data/benchmark/language_groups_coverage_bottomk200_equal2233_v1.json \
+  --out_dir artifacts/prediction/coverage_bottomk200_equal2233_v1/baselines \
+  --report_out artifacts/prediction/coverage_bottomk200_equal2233_v1/report_baselines_on_gold.json
 ```
 
 ## Output Conventions
