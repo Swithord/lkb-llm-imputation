@@ -16,6 +16,16 @@
 | `kg_flat_retrieval_only`              | kg ablation  | `v5_glottolog_tree_retrieval_only_json` + `kg_flat`              | yes  |    `0.8555` |   `0.7858` | `0.8809` | `0.8670` | `0.8186` | completed        |
 | `kg_typed_contrastive_retrieval_only` | kg ablation  | `v5_glottolog_tree_retrieval_only_json` + `kg_typed_contrastive` | yes  |    `0.8601` |   `0.7882` | `0.8679` | `0.8809` | `0.8316` | completed        |
 
+**Prompting flags used for this table**
+
+- `--prompt_version` controls the prompt template family and JSON scaffold. In this table, it maps to the left side of `Prompt / Retrieval` (for example `v4_strict_json`, `v5_glottolog_tree_json`, `v5_glottolog_tree_retrieval_only_json`).
+- `--include_vote_table` / `--no-include_vote_table` controls whether the compact vote summary is inserted into the prompt context. This maps directly to the `Vote` column (`yes` vs `no`).
+- `--retrieval_backend` (Glottolog/KG runs only) chooses the retrieval strategy: `kg_flat`, `kg_typed`, `kg_typed_contrastive`, or `hybrid_flat_kg`. In this table, it maps to the right side of `Prompt / Retrieval` for KG rows.
+- Flag wiring:
+  `benchmark/build_prompts_from_gold.py` passes these values into `set_prompt_options(...)` in `code/prompting.py` or `glottolog-tree/prompting.py`; KG runs also call `set_retrieval_options(...)`.
+- Typical benchmark invocations:
+  `scripts/run_eval.sbatch` and `scripts/run_glottolog_benchmark.sbatch` generate paired runs by calling both `--no-include_vote_table` (novote) and `--include_vote_table` (vote).
+
 **Notes by run**
 
 - `mean`
