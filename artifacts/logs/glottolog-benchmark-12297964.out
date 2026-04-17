@@ -1,0 +1,240 @@
+Python 3.11.4
+Benchmark variant: coverage_bottomk200_equal2233_v1
+Gold file: data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl
+KG run modes: vote
+Retrieval backend: kg_typed_contrastive
+Thu Apr 16 15:25:31 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:CB:00.0 Off |                   On |
+| N/A   31C    P0             69W /  700W |     101MiB /  81559MiB |     N/A      Default |
+|                                         |                        |              Enabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| MIG devices:                                                                            |
++------------------+----------------------------------+-----------+-----------------------+
+| GPU  GI  CI  MIG |              Shared Memory-Usage |        Vol|        Shared         |
+|      ID  ID  Dev |                Shared BAR1-Usage | SM     Unc| CE ENC  DEC  OFA  JPG |
+|                  |                                  |        ECC|                       |
+|==================+==================================+===========+=======================|
+|  0    2   0   0  |              44MiB / 40448MiB    | 60      0 |  3   0    3    0    3 |
+|                  |               0MiB / 24740MiB    |           |                       |
++------------------+----------------------------------+-----------+-----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Using existing data/derived/genetic_neighbours_detailed.json
+Using existing KG files: artifacts/resources/kg_nodes.jsonl and artifacts/resources/kg_edges.jsonl
+Wrote prompts: artifacts/prediction/coverage_bottomk200_equal2233_v1_kg_typed_contrastive_balanced_fallback/prompts_eval_v5_glottolog_tree_json_vote.jsonl
+Num prompts: 6699
+Prompt version: v5_glottolog_tree_json
+Include vote table: True
+Wrote predictions: artifacts/prediction/coverage_bottomk200_equal2233_v1_kg_typed_contrastive_balanced_fallback/predictions_eval_v5_glottolog_tree_json_vote.jsonl
+Num prompts: 6699
+{
+  "confidence_map": {
+    "low": 0.33,
+    "medium": 0.66,
+    "high": 0.9
+  },
+  "normalized": {
+    "counts": {
+      "overall": {
+        "n": 6699
+      },
+      "lrl": {
+        "n": 2233
+      },
+      "mrl": {
+        "n": 2233
+      },
+      "hrl": {
+        "n": 2233
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.8022092849679057,
+        "precision": 0.6176675977653632,
+        "recall": 0.8849424712356178,
+        "f1": 0.7275344437589965,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.905441354292624,
+        "high_conf_coverage": 0.6172563069114794,
+        "rationale_ok_rate": 1.0
+      },
+      "lrl": {
+        "accuracy": 0.8159426780116436,
+        "precision": 0.6736745886654479,
+        "recall": 0.93173198482933,
+        "f1": 0.7819628647214855,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.9412577747062889,
+        "high_conf_coverage": 0.6480071652485445,
+        "rationale_ok_rate": 1.0
+      },
+      "mrl": {
+        "accuracy": 0.8190774742498881,
+        "precision": 0.6051401869158879,
+        "recall": 0.886986301369863,
+        "f1": 0.7194444444444446,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.9035792549306063,
+        "high_conf_coverage": 0.6130765785938199,
+        "rationale_ok_rate": 1.0
+      },
+      "hrl": {
+        "accuracy": 0.7716077026421854,
+        "precision": 0.562363238512035,
+        "recall": 0.8237179487179487,
+        "f1": 0.6684005201560468,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.868081880212282,
+        "high_conf_coverage": 0.5906851768920734,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.14172688460963487,
+      "ece_10bin": 0.012649649201345332,
+      "n_with_valid_confidence": 6699
+    }
+  },
+  "strict_raw": {
+    "counts": {
+      "overall": {
+        "n": 6699
+      },
+      "lrl": {
+        "n": 2233
+      },
+      "mrl": {
+        "n": 2233
+      },
+      "hrl": {
+        "n": 2233
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.8022092849679057,
+        "precision": 0.6176675977653632,
+        "recall": 0.8849424712356178,
+        "f1": 0.7275344437589965,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.905441354292624,
+        "high_conf_coverage": 0.6172563069114794,
+        "rationale_ok_rate": 1.0
+      },
+      "lrl": {
+        "accuracy": 0.8159426780116436,
+        "precision": 0.6736745886654479,
+        "recall": 0.93173198482933,
+        "f1": 0.7819628647214855,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.9412577747062889,
+        "high_conf_coverage": 0.6480071652485445,
+        "rationale_ok_rate": 1.0
+      },
+      "mrl": {
+        "accuracy": 0.8190774742498881,
+        "precision": 0.6051401869158879,
+        "recall": 0.886986301369863,
+        "f1": 0.7194444444444446,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.9035792549306063,
+        "high_conf_coverage": 0.6130765785938199,
+        "rationale_ok_rate": 1.0
+      },
+      "hrl": {
+        "accuracy": 0.7716077026421854,
+        "precision": 0.562363238512035,
+        "recall": 0.8237179487179487,
+        "f1": 0.6684005201560468,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.868081880212282,
+        "high_conf_coverage": 0.5906851768920734,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.14172688460963487,
+      "ece_10bin": 0.012649649201345332,
+      "n_with_valid_confidence": 6699
+    }
+  },
+  "legacy": {
+    "counts": {
+      "overall": {
+        "n": 6699
+      },
+      "lrl": {
+        "n": 2233
+      },
+      "mrl": {
+        "n": 2233
+      },
+      "hrl": {
+        "n": 2233
+      }
+    },
+    "metrics": {
+      "overall": {
+        "accuracy": 0.8022092849679057,
+        "precision": 0.6176675977653632,
+        "recall": 0.8849424712356178,
+        "f1": 0.7275344437589965,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.905441354292624,
+        "high_conf_coverage": 0.6172563069114794,
+        "rationale_ok_rate": 1.0
+      },
+      "lrl": {
+        "accuracy": 0.8159426780116436,
+        "precision": 0.6736745886654479,
+        "recall": 0.93173198482933,
+        "f1": 0.7819628647214855,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.9412577747062889,
+        "high_conf_coverage": 0.6480071652485445,
+        "rationale_ok_rate": 1.0
+      },
+      "mrl": {
+        "accuracy": 0.8190774742498881,
+        "precision": 0.6051401869158879,
+        "recall": 0.886986301369863,
+        "f1": 0.7194444444444446,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.9035792549306063,
+        "high_conf_coverage": 0.6130765785938199,
+        "rationale_ok_rate": 1.0
+      },
+      "hrl": {
+        "accuracy": 0.7716077026421854,
+        "precision": 0.562363238512035,
+        "recall": 0.8237179487179487,
+        "f1": 0.6684005201560468,
+        "parsed_rate": 1.0,
+        "high_conf_accuracy": 0.868081880212282,
+        "high_conf_coverage": 0.5906851768920734,
+        "rationale_ok_rate": 1.0
+      }
+    },
+    "calibration": {
+      "brier_on_correctness": 0.14172688460963487,
+      "ece_10bin": 0.012649649201345332,
+      "n_with_valid_confidence": 6699
+    }
+  }
+}

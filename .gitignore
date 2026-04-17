@@ -30,3 +30,5 @@ benchmark/report_eval_baseline_from_existing.json
 report_prompt_v3.json
 report_baselines_v1.json
 speed_report.json
+
+artifacts/resources/kg_edges.jsonl

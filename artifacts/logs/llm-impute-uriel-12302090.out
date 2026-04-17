@@ -1,0 +1,7 @@
+PWD: /project/6102153/vivianqw/lkb-llm-imputation
+HOST: g31.nibi.sharcnet
+which python: /project/6102153/vivianqw/lkb-llm-imputation/.venv/bin/python
+Python 3.11.4
+Benchmark variant: coverage_bottomk200_equal2233_v1
+Gold file: data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl
+Legacy run modes: vote,novote
