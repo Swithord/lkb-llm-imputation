@@ -19,16 +19,16 @@ set -euo pipefail
 
 MODE="${MODE:-benchmark}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
-BENCHMARK_VARIANT="${BENCHMARK_VARIANT:-frozen_v2}"   # frozen_v2 | coverage_resource_v1 | coverage_sparse_resource_v1 | coverage_bottomk200_equal2233_v1 | custom
+BENCHMARK_VARIANT="${BENCHMARK_VARIANT:-coverage_bottomk200_equal2233_v1}"   # frozen_v2 | coverage_resource_v1 | coverage_sparse_resource_v1 | coverage_bottomk200_equal2233_v1 | custom
 GOLD="${GOLD:-}"
 PROMPT_VERSION="${PROMPT_VERSION:-v5_glottolog_tree_json}"
-OUT_DIR="${OUT_DIR:-artifacts/prediction/benchmark_glottolog}"
 KG_RUN_MODES="${KG_RUN_MODES:-vote}"   # comma-separated: vote,novote
 GLOTTOLOG_PATH="${GLOTTOLOG_PATH:-$SLURM_SUBMIT_DIR/glottolog}"
 GEN_DETAIL="${GEN_DETAIL:-data/derived/genetic_neighbours_detailed.json}"
 KG_NODES="${KG_NODES:-artifacts/resources/kg_nodes.jsonl}"
 KG_EDGES="${KG_EDGES:-artifacts/resources/kg_edges.jsonl}"
 RETRIEVAL_BACKEND="${RETRIEVAL_BACKEND:-kg_flat}"
+OUT_DIR="${OUT_DIR:-artifacts/prediction/${BENCHMARK_VARIANT}_${RETRIEVAL_BACKEND}}"
 PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
 EXTRA_MODULES="${EXTRA_MODULES:-}"
