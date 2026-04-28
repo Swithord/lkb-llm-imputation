@@ -22,7 +22,7 @@ MODEL="${MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
 BENCHMARK_VARIANT="${BENCHMARK_VARIANT:-frozen_v2}"   # frozen_v2 | coverage_resource_v1 | coverage_sparse_resource_v1 | coverage_bottomk200_equal2233_v1 | custom
 GOLD="${GOLD:-}"
 OUT_DIR="${OUT_DIR:-artifacts/prediction}"
-PROMPT_VERSION="${PROMPT_VERSION:-v3_strict_json}"
+PROMPT_VERSION="${PROMPT_VERSION:-v4_strict_json}"
 LEGACY_RUN_MODES="${LEGACY_RUN_MODES:-vote,novote}"   # comma-separated: vote,novote
 PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
@@ -120,89 +120,59 @@ run_benchmark() {
   VOTE_REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_vote.json"
 
   if mode_enabled "novote" "$LEGACY_RUN_MODES"; then
-    python benchmark/build_prompts_from_gold.py \
-      --prompting_py code/prompting.py \
-      --typ data/derived/uriel+_typological.csv \
-      --meta data/derived/metadata.csv \
-      --topk_csv data/features/topk_per_feature.csv \
-      --gen data/derived/genetic_neighbours.json \
-      --geo data/derived/geographic_neighbours.json \
+    python -m lkb.scripts.build_prompts \
       --gold "$GOLD" \
-      --prompt_version "$PROMPT_VERSION" \
+      --prompt icl \
+      --version "$PROMPT_VERSION" \
       --no-include_vote_table \
       --out "$NO_VOTE_PROMPTS"
   fi
 
   if mode_enabled "vote" "$LEGACY_RUN_MODES"; then
-    python benchmark/build_prompts_from_gold.py \
-      --prompting_py code/prompting.py \
-      --typ data/derived/uriel+_typological.csv \
-      --meta data/derived/metadata.csv \
-      --topk_csv data/features/topk_per_feature.csv \
-      --gen data/derived/genetic_neighbours.json \
-      --geo data/derived/geographic_neighbours.json \
+    python -m lkb.scripts.build_prompts \
       --gold "$GOLD" \
-      --prompt_version "$PROMPT_VERSION" \
+      --prompt icl \
+      --version "$PROMPT_VERSION" \
       --include_vote_table \
       --out "$VOTE_PROMPTS"
   fi
 
   if mode_enabled "novote" "$LEGACY_RUN_MODES"; then
-    python benchmark/infer_from_prompts.py \
+    python -m lkb.scripts.infer \
       --in "$NO_VOTE_PROMPTS" \
       --out "$NO_VOTE_PREDS" \
       --model "$MODEL" \
       --device "$INFER_DEVICE" \
       --batch_size "$BATCH_SIZE" \
-      --max_new_tokens "$MAX_NEW_TOKENS" \
-      --no-strengthen_json_contract \
-      --stop_at_closing_brace
+      --max_new_tokens "$MAX_NEW_TOKENS"
   fi
 
   if mode_enabled "vote" "$LEGACY_RUN_MODES"; then
-    python benchmark/infer_from_prompts.py \
+    python -m lkb.scripts.infer \
       --in "$VOTE_PROMPTS" \
       --out "$VOTE_PREDS" \
       --model "$MODEL" \
       --device "$INFER_DEVICE" \
       --batch_size "$BATCH_SIZE" \
-      --max_new_tokens "$MAX_NEW_TOKENS" \
-      --no-strengthen_json_contract \
-      --stop_at_closing_brace
+      --max_new_tokens "$MAX_NEW_TOKENS"
   fi
 
   if mode_enabled "novote" "$LEGACY_RUN_MODES"; then
-    python benchmark/evaluate_benchmark.py \
+    python -m lkb.scripts.evaluate \
       --gold "$GOLD" \
       --pred "$NO_VOTE_PREDS" \
       --report_out "$NO_VOTE_REPORT"
   fi
 
   if mode_enabled "vote" "$LEGACY_RUN_MODES"; then
-    python benchmark/evaluate_benchmark.py \
+    python -m lkb.scripts.evaluate \
       --gold "$GOLD" \
       --pred "$VOTE_PREDS" \
       --report_out "$VOTE_REPORT"
   fi
 
-  if [[ -f artifacts/benchmark/predictions_eval_2.jsonl ]]; then
-    python benchmark/evaluate_benchmark.py \
-      --gold "$GOLD" \
-      --pred artifacts/benchmark/predictions_eval_2.jsonl \
-      --report_out "$OUT_DIR/report_eval_baseline_from_existing.json"
-
-    if [[ -f "$NO_VOTE_REPORT" && -f "$VOTE_REPORT" ]]; then
-      python benchmark/compare_prompt_reports.py \
-        --baseline_report "$OUT_DIR/report_eval_baseline_from_existing.json" \
-        --v3_no_vote_report "$NO_VOTE_REPORT" \
-        --v3_vote_report "$VOTE_REPORT" \
-        --prompt_version "$PROMPT_VERSION" \
-        --out "$OUT_DIR/report_prompt_${PROMPT_VERSION}.json"
-    fi
-  fi
-
   if [[ -f "$VOTE_PROMPTS" ]]; then
-    python benchmark/measure_stream_a_speed.py \
+    python -m lkb.scripts.speed_bench \
       --in "$VOTE_PROMPTS" \
       --model "$MODEL" \
       --device "$INFER_DEVICE" \
@@ -210,7 +180,7 @@ run_benchmark() {
       --max_new_tokens "$MAX_NEW_TOKENS" \
       --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
   elif [[ -f "$NO_VOTE_PROMPTS" ]]; then
-    python benchmark/measure_stream_a_speed.py \
+    python -m lkb.scripts.speed_bench \
       --in "$NO_VOTE_PROMPTS" \
       --model "$MODEL" \
       --device "$INFER_DEVICE" \
@@ -221,33 +191,20 @@ run_benchmark() {
 }
 
 run_full() {
-  OUT_DIR_ENV="$OUT_DIR" python - <<'PY'
-import json, os, pandas as pd
-out_dir = os.environ["OUT_DIR_ENV"]
-df = pd.read_csv("data/derived/uriel+_typological.csv", index_col=0)
-langs = [str(x) for x in df.index]
-path = f"{out_dir}/language_groups_all.json"
-with open(path, "w", encoding="utf-8") as f:
-    json.dump({"high": langs, "low": []}, f, ensure_ascii=False, indent=2)
-print(f"Wrote {path}")
-PY
-
-  python benchmark/eval_prompting.py \
-    --prompting_py code/prompting.py \
-    --typ data/derived/uriel+_typological.csv \
-    --meta data/derived/metadata.csv \
-    --topk_csv data/features/topk_per_feature.csv \
-    --gen data/derived/genetic_neighbours.json \
-    --geo data/derived/geographic_neighbours.json \
-    --groups_json "$OUT_DIR/language_groups_all.json" \
-    --prompt_version "$PROMPT_VERSION" \
+  python -m lkb.scripts.build_prompts \
+    --gold "$GOLD" \
+    --prompt icl \
+    --version "$PROMPT_VERSION" \
     --include_vote_table \
+    --out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl"
+
+  python -m lkb.scripts.infer \
+    --in "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl" \
+    --out "$OUT_DIR/eval_missing_predictions_all_${PROMPT_VERSION}.jsonl" \
     --model "$MODEL" \
     --device "$INFER_DEVICE" \
     --batch_size "$BATCH_SIZE" \
-    --max_new_tokens "$MAX_NEW_TOKENS" \
-    --prompts_out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl" \
-    --pred_out "$OUT_DIR/eval_missing_predictions_all_${PROMPT_VERSION}.jsonl"
+    --max_new_tokens "$MAX_NEW_TOKENS"
 }
 
 case "$MODE" in
