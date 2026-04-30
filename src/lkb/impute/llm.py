@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
+from jinja2 import exceptions as jinja_exceptions
+
 from lkb.interfaces import (
     Imputer,
     KnowledgeBase,
@@ -65,9 +67,21 @@ class HFClient(LLMClient):
             {"role": "user", "content": user},
         ]
         if hasattr(self._tokenizer, "apply_chat_template"):
-            prompt = self._tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+            try:
+                prompt = self._tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            except jinja_exceptions.TemplateError as exc:
+                # Some chat templates (e.g., Gemma variants) reject an explicit
+                # ``system`` role. Fold system guidance into the user turn.
+                if "System role not supported" not in str(exc):
+                    raise
+                merged_user = f"System instructions:\n{system}\n\nUser request:\n{user}"
+                prompt = self._tokenizer.apply_chat_template(
+                    [{"role": "user", "content": merged_user}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
         else:
             prompt = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:\n"
 
