@@ -1,0 +1,10 @@
+usage: build_prompts.py [-h] --gold GOLD [--prompt {icl,kg}]
+                        [--version VERSION]
+                        [--include_vote_table | --no-include_vote_table]
+                        [--retrieval_backend {kg_flat,kg_typed,kg_typed_contrastive,hybrid_flat_kg}]
+                        [--top_n_features TOP_N_FEATURES]
+                        [--data_root DATA_ROOT] [--typ TYP] [--meta META]
+                        [--topk_csv TOPK_CSV] [--gen GEN]
+                        [--gen_detail GEN_DETAIL] [--geo GEO]
+                        [--kg_nodes KG_NODES] [--kg_edges KG_EDGES] --out OUT
+build_prompts.py: error: argument --retrieval_backend: invalid choice: 'kg_typed_contrastive_fixed' (choose from 'kg_flat', 'kg_typed', 'kg_typed_contrastive', 'hybrid_flat_kg')
