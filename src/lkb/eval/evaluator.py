@@ -44,43 +44,36 @@ class Evaluator:
     # ---- gold item construction --------------------------------------------
 
     @staticmethod
-    def gold_items_from_mask(
+    def gold_items_from_split(
         kb,
-        mask,
-        *,
-        split: Optional[Split] = None,
-        limit_to_test: bool = True,
+        split: Split,
+        partition: str = "test",
     ) -> List[GoldItem]:
-        """Gold items from a boolean MCAR mask on an ``observed`` KB.
-
-        When a ``Split`` with a language-level test set is provided and
-        ``limit_to_test=True``, only entries for test-set languages are emitted.
-        """
+        """Gold items for ``partition`` (``'test'`` or ``'dev'``) from a stratified Split."""
         import numpy as np
 
-        mask = mask.astype(bool, copy=False)
-        languages = list(kb.languages)
-        features = list(kb.features)
+        pairs = split.test if partition == "test" else split.dev
+        lang_idx = {lang: i for i, lang in enumerate(kb.languages)}
+        feat_idx = {feat: i for i, feat in enumerate(kb.features)}
         matrix = kb.as_matrix()
-        test_set = set(split.test) if (split and limit_to_test) else None
 
         items: List[GoldItem] = []
-        rows, cols = np.where(mask)
-        for r, c in zip(rows.tolist(), cols.tolist()):
-            lang = languages[r]
-            if test_set is not None and lang not in test_set:
+        for lang, feat in pairs:
+            r = lang_idx.get(lang)
+            c = feat_idx.get(feat)
+            if r is None or c is None:
                 continue
             val = int(matrix[r, c])
             if val not in (0, 1):
                 continue
-            group = (split.resource_group_for(lang) if split else None) or "unknown"
+            group = _normalize_group(split.resource_group_for(lang) or "unknown")
             items.append(
                 GoldItem(
-                    id=f"{lang}:{features[c]}",
+                    id=f"{group}:{lang}:{feat}",
                     language=lang,
-                    feature=features[c],
+                    feature=feat,
                     gold_value=str(val),
-                    resource_group=_normalize_group(group),
+                    resource_group=group,
                 )
             )
         return items
