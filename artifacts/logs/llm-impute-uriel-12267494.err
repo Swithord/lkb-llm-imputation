@@ -1,6 +1,0 @@
-Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<01:30,  3.19it/s]Loading weights:   3%|▎         | 8/291 [00:00<00:24, 11.69it/s]Loading weights:  22%|██▏       | 65/291 [00:01<00:04, 56.42it/s]Loading weights:  51%|█████     | 148/291 [00:02<00:01, 78.40it/s]Loading weights:  88%|████████▊ | 256/291 [00:02<00:00, 141.79it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 115.74it/s]
-Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<00:41,  6.95it/s]Loading weights:   1%|          | 2/291 [00:00<00:44,  6.46it/s]Loading weights:   3%|▎         | 9/291 [00:02<01:20,  3.49it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 117.67it/s]
-Traceback (most recent call last):
-  File "/project/6102153/vivianqw/lkb-llm-imputation/benchmark/measure_stream_a_speed.py", line 9, in <module>
-    from infer_from_prompts import (
-ImportError: cannot import name '_slice_to_first_json_object' from 'infer_from_prompts' (/project/6102153/vivianqw/lkb-llm-imputation/benchmark/infer_from_prompts.py)
