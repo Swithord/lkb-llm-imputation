@@ -1,0 +1,11 @@
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<00:31,  9.10it/s]Loading weights:   1%|          | 2/291 [00:00<00:34,  8.27it/s]Loading weights:   4%|▍         | 13/291 [00:00<00:20, 13.84it/s]Loading weights:  48%|████▊     | 139/291 [00:01<00:01, 84.17it/s]Loading weights: 100%|██████████| 291/291 [00:01<00:00, 148.45it/s]
+Traceback (most recent call last):
+  File "/project/6102153/vivianqw/lkb-llm-imputation/benchmark/evaluate_benchmark.py", line 276, in <module>
+    main()
+  File "/project/6102153/vivianqw/lkb-llm-imputation/benchmark/evaluate_benchmark.py", line 258, in main
+    normalized = _evaluate_view(gold, pred, "normalized", conf_score)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/benchmark/evaluate_benchmark.py", line 160, in _evaluate_view
+    groups[key]["n"] += 1
+    ~~~~~~^^^^^
+KeyError: 'lrl'

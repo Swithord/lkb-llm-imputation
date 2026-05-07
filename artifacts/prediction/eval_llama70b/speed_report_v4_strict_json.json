@@ -1,0 +1,8 @@
+{
+  "model": "meta-llama/Llama-3.3-70B-Instruct",
+  "n_prompts": 6699,
+  "batch_size": 1,
+  "max_new_tokens": 64,
+  "elapsed_s": 11988.776,
+  "throughput_prompts_per_s": 0.5588
+}

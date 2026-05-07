@@ -1,0 +1,35 @@
+Loading weights:   0%|          | 0/464 [00:00<?, ?it/s]Loading weights:   0%|          | 1/464 [00:00<01:53,  4.07it/s]Loading weights:   1%|          | 4/464 [00:00<00:53,  8.61it/s]Loading weights:  14%|█▍        | 65/464 [00:00<00:03, 118.34it/s]Loading weights:  18%|█▊        | 85/464 [00:01<00:06, 58.05it/s] Loading weights:  52%|█████▏    | 242/464 [00:01<00:01, 181.44it/s]Loading weights:  66%|██████▌   | 306/464 [00:02<00:00, 203.10it/s]Loading weights:  77%|███████▋  | 357/464 [00:02<00:00, 220.99it/s]Loading weights:  83%|████████▎ | 383/464 [00:02<00:00, 181.44it/s]Loading weights:  97%|█████████▋| 449/464 [00:02<00:00, 242.91it/s]Loading weights: 100%|██████████| 464/464 [00:02<00:00, 176.77it/s]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/scripts/infer.py", line 114, in <module>
+    main()
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/scripts/infer.py", line 90, in main
+    raws = llm.complete(payloads)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/impute/llm.py", line 87, in complete
+    return [self._generate(p.system, p.user) for p in payloads]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/impute/llm.py", line 87, in <listcomp>
+    return [self._generate(p.system, p.user) for p in payloads]
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/impute/llm.py", line 68, in _generate
+    prompt = self._tokenizer.apply_chat_template(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/transformers/tokenization_utils_base.py", line 3063, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+                                        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/transformers/utils/chat_template_utils.py", line 571, in render_jinja_template
+    rendered_chat = compiled_template.render(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/jinja2/environment.py", line 1295, in render
+    self.environment.handle_exception()
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/jinja2/environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "<template>", line 1, in top-level template code
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/jinja2/sandbox.py", line 401, in call
+    return __context.call(__obj, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/transformers/utils/chat_template_utils.py", line 479, in raise_exception
+    raise jinja2.exceptions.TemplateError(message)
+jinja2.exceptions.TemplateError: System role not supported
