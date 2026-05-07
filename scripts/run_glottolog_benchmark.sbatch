@@ -19,8 +19,7 @@ set -euo pipefail
 
 MODE="${MODE:-benchmark}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
-BENCHMARK_VARIANT="${BENCHMARK_VARIANT:-coverage_bottomk200_equal2233_v1}"   # frozen_v2 | coverage_resource_v1 | coverage_sparse_resource_v1 | coverage_bottomk200_equal2233_v1 | custom
-GOLD="${GOLD:-}"
+GOLD="${GOLD:-data/benchmark/gold_eval_2.jsonl}"
 PROMPT_VERSION="${PROMPT_VERSION:-v5_glottolog_tree_json}"
 KG_RUN_MODES="${KG_RUN_MODES:-vote}"   # comma-separated: vote,novote
 GLOTTOLOG_PATH="${GLOTTOLOG_PATH:-$SLURM_SUBMIT_DIR/glottolog}"
@@ -28,7 +27,7 @@ GEN_DETAIL="${GEN_DETAIL:-data/derived/genetic_neighbours_detailed.json}"
 KG_NODES="${KG_NODES:-artifacts/resources/kg_nodes.jsonl}"
 KG_EDGES="${KG_EDGES:-artifacts/resources/kg_edges.jsonl}"
 RETRIEVAL_BACKEND="${RETRIEVAL_BACKEND:-kg_flat}"
-OUT_DIR="${OUT_DIR:-artifacts/prediction/${BENCHMARK_VARIANT}_${RETRIEVAL_BACKEND}}"
+OUT_DIR="${OUT_DIR:-artifacts/prediction/stratified_v1/${RETRIEVAL_BACKEND}}"
 PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
 EXTRA_MODULES="${EXTRA_MODULES:-}"
@@ -37,35 +36,6 @@ INFER_DEVICE="${INFER_DEVICE:-cuda}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-64}"
 export GLOTTOLOG_PATH GEN_DETAIL KG_NODES KG_EDGES RETRIEVAL_BACKEND
-
-resolve_benchmark_gold() {
-  if [[ -n "$GOLD" ]]; then
-    return
-  fi
-
-  case "$BENCHMARK_VARIANT" in
-    frozen_v2)
-      GOLD="data/benchmark/gold_eval_2.jsonl"
-      ;;
-    coverage_resource_v1)
-      GOLD="data/benchmark/gold_eval_coverage_resource_v1.jsonl"
-      ;;
-    coverage_sparse_resource_v1)
-      GOLD="data/benchmark/gold_eval_coverage_sparse_resource_v1.jsonl"
-      ;;
-    coverage_bottomk200_equal2233_v1)
-      GOLD="data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl"
-      ;;
-    custom)
-      echo "BENCHMARK_VARIANT=custom requires GOLD to be set explicitly."
-      exit 1
-      ;;
-    *)
-      echo "Unknown BENCHMARK_VARIANT: $BENCHMARK_VARIANT"
-      exit 1
-      ;;
-  esac
-}
 
 mode_enabled() {
   local mode="$1"
@@ -78,7 +48,6 @@ mode_enabled() {
 
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p artifacts/logs "$OUT_DIR"
-resolve_benchmark_gold
 
 if [[ -n "$PYTHON_MODULE" ]]; then
   module load "$PYTHON_MODULE"
@@ -97,7 +66,6 @@ else
 fi
 
 python --version
-echo "Benchmark variant: $BENCHMARK_VARIANT"
 echo "Gold file: $GOLD"
 echo "KG run modes: $KG_RUN_MODES"
 nvidia-smi

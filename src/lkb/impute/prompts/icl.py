@@ -45,7 +45,6 @@ class ICLPrompt(Prompt):
     """In-context learning prompt (v4_strict_json)."""
 
     name = "icl"
-    version = "v4_strict_json"
 
     def __init__(
         self,
@@ -682,7 +681,6 @@ class ICLPrompt(Prompt):
         else:
             lines.append("- No reliable correlated clues with enough support.")
 
-        lines.append(f"Prompt version: {self.version}")
         lines.append("Task:")
         lines.append("Predict the missing value for the following feature:")
         lines.append(f"- Feature: {feature}")
@@ -728,7 +726,6 @@ class ICLPrompt(Prompt):
             meta={
                 "language": language,
                 "feature": feature,
-                "version": self.version,
                 "phylo_neighbors": list(phylo_neighbors),
                 "geo_neighbors": list(geo_neighbors),
             },

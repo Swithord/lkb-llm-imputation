@@ -19,8 +19,7 @@ set -euo pipefail
 
 MODE="${MODE:-all}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
-BENCHMARK_VARIANT="${BENCHMARK_VARIANT:-frozen_v2}"   # frozen_v2 | coverage_resource_v1 | coverage_sparse_resource_v1 | coverage_bottomk200_equal2233_v1 | custom
-GOLD="${GOLD:-}"
+GOLD="${GOLD:-data/benchmark/gold_eval_2.jsonl}"
 OUT_DIR="${OUT_DIR:-artifacts/prediction}"
 PROMPT_VERSION="${PROMPT_VERSION:-v4_strict_json}"
 LEGACY_RUN_MODES="${LEGACY_RUN_MODES:-vote,novote}"   # comma-separated: vote,novote
@@ -31,35 +30,6 @@ VENV_PATH="${VENV_PATH:-.venv}"
 INFER_DEVICE="${INFER_DEVICE:-cuda}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-64}"
-
-resolve_benchmark_gold() {
-  if [[ -n "$GOLD" ]]; then
-    return
-  fi
-
-  case "$BENCHMARK_VARIANT" in
-    frozen_v2)
-      GOLD="data/benchmark/gold_eval_2.jsonl"
-      ;;
-    coverage_resource_v1)
-      GOLD="data/benchmark/gold_eval_coverage_resource_v1.jsonl"
-      ;;
-    coverage_sparse_resource_v1)
-      GOLD="data/benchmark/gold_eval_coverage_sparse_resource_v1.jsonl"
-      ;;
-    coverage_bottomk200_equal2233_v1)
-      GOLD="data/benchmark/gold_eval_coverage_bottomk200_equal2233_v1.jsonl"
-      ;;
-    custom)
-      echo "BENCHMARK_VARIANT=custom requires GOLD to be set explicitly."
-      exit 1
-      ;;
-    *)
-      echo "Unknown BENCHMARK_VARIANT: $BENCHMARK_VARIANT"
-      exit 1
-      ;;
-  esac
-}
 
 mode_enabled() {
   local mode="$1"
@@ -72,7 +42,6 @@ mode_enabled() {
 
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p artifacts/logs "$OUT_DIR"
-resolve_benchmark_gold
 
 if [[ -n "$PYTHON_MODULE" ]]; then
   module load "$PYTHON_MODULE"
@@ -95,7 +64,6 @@ echo "PWD: $(pwd)"
 echo "HOST: $(hostname)"
 echo "which python: $(which python)"
 python --version
-echo "Benchmark variant: $BENCHMARK_VARIANT"
 echo "Gold file: $GOLD"
 echo "Legacy run modes: $LEGACY_RUN_MODES"
 python -c "import pandas; print('pandas ok')"

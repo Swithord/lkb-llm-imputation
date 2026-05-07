@@ -184,7 +184,7 @@ class URIELPlus(KnowledgeBase):
         cls,
         data_root: str | Path = ".",
         *,
-        typology_path: str | Path = "data/derived/uriel+_typological.csv",
+        typology_path: str | Path = "data/derived/URIELPlus_Union.csv",
         metadata_path: str | Path = "data/derived/metadata.csv",
         genetic_neighbours_path: str | Path = "data/derived/genetic_neighbours.json",
         genetic_neighbour_details_path: str | Path = "data/derived/genetic_neighbours_detailed.json",
