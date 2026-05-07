@@ -1,8 +1,0 @@
-{
-  "model": "google/gemma-2-9b-it",
-  "n_prompts": 6699,
-  "batch_size": 1,
-  "max_new_tokens": 64,
-  "elapsed_s": 5315.226,
-  "throughput_prompts_per_s": 1.2603
-}
