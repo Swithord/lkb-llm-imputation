@@ -16,16 +16,11 @@ from lkb.interfaces import KnowledgeBase, Prediction, Prompt, PromptPayload
 
 
 SYSTEM_MESSAGE = (
-    "You are a linguistics expert specializing in typology.\n"
-    "Infer missing typological features using:\n"
-    "(1) observed facts about the target language,\n"
-    "(2) evidence from phylogenetic and geographic neighbors,\n"
-    "and (3) well-established linguistic universals.\n"
-    "Compare the evidence for value 0 versus value 1.\n"
-    "Neighbor counts are useful, but do not follow majority vote blindly.\n"
-    "A smaller number of closer or more relevant neighbors may outweigh a larger number of weaker neighbors.\n"
-    "It is acceptable to predict a minority value if it is better supported by the target language's observed properties and closest evidence.\n"
-    "Use feature prevalence only as a weak tie-breaker when the evidence is otherwise balanced."
+    "You are a linguist working with data from a linguistic knowledge base.\n"
+    "Your task is to predict a target language's typological features given facts about the target language, other observed typological features, and evidence from phylogenetic and geographic neighbors.\n"
+    # "A smaller number of more relevant neighbors may outweigh a larger number of weaker neighbors.\n"
+    # "Neighbour counts are provided as a reference. You may predict a minority value if it is better supported by the target language's observed properties.\n"
+    # "Feature prevalence information is intended as a weak tie-breaker when the evidence is otherwise balanced."
 )
 
 VALID_CONFIDENCE = {"low", "medium", "high"}
@@ -404,11 +399,11 @@ class ICLPrompt(Prompt):
             if mode == "geographic" and lat0 is not None and lon0 is not None:
                 lat1, lon1 = self._latlon(kb, nb)
                 if lat1 is not None and lon1 is not None:
-                    header = f"{idx}) {label} (glottocode={nb}, km={_haversine_km(lat0, lon0, lat1, lon1):.1f}):"
+                    header = f"{idx}) {label} (km={_haversine_km(lat0, lon0, lat1, lon1):.1f}):"
                 else:
-                    header = f"{idx}) {label} (glottocode={nb}, rank={rank.get(str(nb), '?')}):"
+                    header = f"{idx}) {label} (proximity rank={rank.get(str(nb), '?')}):"
             else:
-                header = f"{idx}) {label} (glottocode={nb}, rank={rank.get(str(nb), '?')}):"
+                header = f"{idx}) {label} (proximity rank={rank.get(str(nb), '?')}):"
             lines.append(header)
 
             facts = self._collect_neighbor_facts(kb, nb, target_feature, correlated)
@@ -416,7 +411,7 @@ class ICLPrompt(Prompt):
                 for feat, val in facts:
                     lines.append(f"- {feat}: {val}")
             else:
-                lines.append("- No observed target or anchor facts available.")
+                lines.append("- No relevant feature observations are available.")
         return lines
 
     def _count_votes(
@@ -535,7 +530,7 @@ class ICLPrompt(Prompt):
                 lat1, lon1 = self._latlon(kb, nb)
                 if lat1 is not None and lon1 is not None:
                     return f"{label} ({_haversine_km(lat0, lon0, lat1, lon1):.1f} km)"
-            return f"{label} (rank {idx})"
+            return f"{label} (proximity rank {idx})"
         return None
 
     # ---- Prompt interface ---------------------------------------------------
@@ -564,8 +559,9 @@ class ICLPrompt(Prompt):
             f"- Glottocode: {language}",
             f"- ISO639-3: {iso}",
             f"- Family lineage: {lineage}",
-            f"- Macro-area: {macro}",
-            f"- Location: latitude={lat}, longitude={lon}",
+            f"- Macro-area: {macro}\n",
+            f"Typological feature to predict: {feature}"
+            # f"- Location: latitude={lat}, longitude={lon}",
         ]
 
         correlated = self._effective_correlated(kb, language, feature)
@@ -597,14 +593,30 @@ class ICLPrompt(Prompt):
         )
 
         anchors = self._observed_anchor_facts(kb, language, feature)
-        lines.append("Observed typological facts (anchor features):")
         if anchors:
+            lines.append(f"\nThe following are {lang_name}'s observed typological features that correlate with the {feature} feature ('anchor features'):")
             for feat_name, feat_value in anchors:
-                lines.append(f"- {feat_name}: {feat_value} (observed)")
-        else:
-            lines.append("- (no observed anchor facts)")
+                lines.append(f"- {feat_name}: {feat_value}")
+        # else:
+        #     lines.append("- (no observed anchor facts)")
 
-        lines.append("Selected phylogenetic neighbors (detailed evidence):")
+        clues, clue_summary = self._collect_clues(kb, language, feature)
+        if clues:
+            lines.append(
+                "\nAcross the knowledge base generally, when languages exhibit the same values for anchor features:")
+            for idx, clue in enumerate(clues, start=1):
+                lines.append(
+                    f"{idx}) {clue['feature']}={clue['value']} -> "
+                    f"{clue['yes']} supports {feature} being 1 / {clue['no']} supports {feature} being 0"
+                )
+            lines.append(
+                f"Overall: {clue_summary['yes']} support 1 / "
+                f"{clue_summary['no']} support 0 / {clue_summary['tie']} tie"
+            )
+        # else:
+        #     lines.append("- No reliable correlated clues with enough support.")
+
+        lines.append(f"\nThe following languages are {lang_name}'s phylogenetic neighbours. Observations for each phylogenetic neighbour's related typological features are listed.")
         lines.extend(
             self._format_neighbor_block(
                 kb, language, phylo_neighbors, phylo_candidates, feature, correlated,
@@ -612,7 +624,7 @@ class ICLPrompt(Prompt):
             )
         )
 
-        lines.append("Selected geographic neighbors (detailed evidence):")
+        lines.append("\nThe following languages are {lang_name}'s geographic neighbours. Observations for each geographic neighbour's related typological features are listed.")
         lines.extend(
             self._format_neighbor_block(
                 kb, language, geo_neighbors, geo_candidates, feature, correlated,
@@ -637,54 +649,39 @@ class ICLPrompt(Prompt):
             g_ratio = (gv["yes"] / g_denom) if g_denom else 0.0
             ov_ratio = (overall["yes"] / ov_denom) if ov_denom else 0.0
             agreement = (max(overall["yes"], overall["no"]) / ov_denom) if ov_denom else 0.0
-            lines.append("Target-feature vote counts (useful but not decisive):")
+            lines.append(f"\nTarget-feature vote counts, representing many phylogenetically and geographically similar languages have the same value as {lang_name} for the {feature} feature:")
             lines.append(
-                f"- Genetic vote: {pv['yes']} yes / {pv['no']} no / {pv['missing']} unk ({p_ratio:.0%} yes)"
+                f"- Phylogenetic neighbour votes: {pv['yes']} yes / {pv['no']} no / {pv['missing']} unkown ({p_ratio:.0%} yes)"
             )
             lines.append(
-                f"- Geo vote: {gv['yes']} yes / {gv['no']} no / {gv['missing']} unk ({g_ratio:.0%} yes)"
+                f"- Geographic neighbour votes: {gv['yes']} yes / {gv['no']} no / {gv['missing']} unkown ({g_ratio:.0%} yes)"
             )
             lines.append(
-                f"- Overall observed votes: {overall['yes']} yes / {overall['no']} no "
+                f"- Overall votes: {overall['yes']} yes / {overall['no']} no "
                 f"({ov_ratio:.0%} yes; agreement={agreement:.0%})"
             )
             lines.append(
                 f"- Vote evidence coverage: {ov_denom} observed target-feature votes "
-                f"(unknown ignored in decision)."
+                # f"(unknown ignored in decision)."
             )
-            lines.append(
-                f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
-            )
+            # lines.append(
+            #     f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
+            # )
 
         phylo_yes = self._nearest_supporting_neighbor(kb, language, phylo_candidates, feature, 1, "phylogenetic")
         phylo_no = self._nearest_supporting_neighbor(kb, language, phylo_candidates, feature, 0, "phylogenetic")
         geo_yes = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 1, "geographic")
         geo_no = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 0, "geographic")
-        lines.append("Nearest contrastive neighbor evidence:")
-        lines.append(f"- Closest phylogenetic support for 1: {phylo_yes or 'none observed'}")
-        lines.append(f"- Closest phylogenetic support for 0: {phylo_no or 'none observed'}")
-        lines.append(f"- Closest geographic support for 1: {geo_yes or 'none observed'}")
-        lines.append(f"- Closest geographic support for 0: {geo_no or 'none observed'}")
+        lines.append("\nThe closest neighbors (by phylogeny and geography) supporting each possible value:")
+        lines.append(f"- Closest phylogenetic neighbour supporting value 1: {phylo_yes or 'none observed'}")
+        lines.append(f"- Closest phylogenetic neighbour supporting value 0: {phylo_no or 'none observed'}")
+        lines.append(f"- Closest geographic neighbour supporting value 1: {geo_yes or 'none observed'}")
+        lines.append(f"- Closest geographic neighbour supporting value 0: {geo_no or 'none observed'}")
 
-        clues, clue_summary = self._collect_clues(kb, language, feature)
-        lines.append("Target-specific correlated clues (compact):")
-        if clues:
-            for idx, clue in enumerate(clues, start=1):
-                lines.append(
-                    f"{idx}) {clue['feature']}={clue['value']} -> target support "
-                    f"{clue['yes']} yes / {clue['no']} no"
-                )
-            lines.append(
-                f"- Correlated clues leaning: {clue_summary['yes']} yes / "
-                f"{clue_summary['no']} no / {clue_summary['tie']} tie"
-            )
-        else:
-            lines.append("- No reliable correlated clues with enough support.")
-
-        lines.append("Task:")
-        lines.append("Predict the missing value for the following feature:")
-        lines.append(f"- Feature: {feature}")
-        lines.append("- Allowed values: 0 | 1")
+        lines.append(f"\nTask: Predict the missing value for the feature {feature} (allowed values: 0, 1).")
+        # lines.append("Predict the missing value for the following feature:")
+        # lines.append(f"- Feature: {feature}")
+        # lines.append("- Allowed values: 0 | 1")
         lines.append("Reasoning guidance:")
         lines.append("- Compare the support for value 0 versus value 1.")
         lines.append(
@@ -703,21 +700,21 @@ class ICLPrompt(Prompt):
         lines.append("Output format (STRICT JSON):")
         lines.append("Output ONLY valid JSON.")
         lines.append(
-            "Return exactly one minified JSON object on one line with keys: value, confidence, rationale."
+            "\nReturn exactly one minified JSON object on one line with keys: value, confidence, rationale."
         )
-        lines.append("- value: one of the allowed values above")
-        lines.append("- confidence: low, medium, or high")
-        lines.append("- rationale: at most 20 words")
-        lines.append("No Markdown, no prose, no code fences, no trailing text.")
-        lines.append("Few-shot examples:")
+        lines.append("- Value: either 1 or 0.")
+        lines.append("- Confidence: low, medium, or high")
+        lines.append("- Rationale: at most 3 sentences.")
+        # lines.append("No Markdown, no prose, no code fences, no trailing text.")
+        lines.append("Example outputs:")
         lines.append(
-            '{"value":"1","confidence":"medium","rationale":"Most neighbors are 0, but the closest and most similar languages support 1."}'
-        )
-        lines.append(
-            '{"value":"1","confidence":"high","rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1."}'
+            '{"value":"1","confidence":"medium","rationale":"While the majority of neighbors overall support 0, the closest phylogenetic neighbour languages support 1."}'
         )
         lines.append(
-            '{"value":"0","confidence":"low","rationale":"Evidence is balanced, so the weak prevalence prior favors 0."}'
+            '{"value":"1","confidence":"high","rationale":"The observed anchor features are known to support 1 when they are 0. Furthermore, phylogenetic neighbours align strongly with value 1."}'
+        )
+        lines.append(
+            '{"value":"0","confidence":"low","rationale":"The evidence is balanced as many neighbours support both values. However, among languages sharing the same values for anchor features, more languages support 0 overall."}'
         )
 
         return PromptPayload(
