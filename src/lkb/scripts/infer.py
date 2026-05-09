@@ -49,7 +49,7 @@ def main() -> None:
     parser.add_argument("--model", default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--max_new_tokens", type=int, default=128)
     parser.add_argument("--dtype", default=None)
     # Kept for CLI compatibility; not used in new code
     parser.add_argument("--stop_at_closing_brace", action="store_true", default=False)

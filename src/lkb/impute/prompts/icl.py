@@ -616,7 +616,7 @@ class ICLPrompt(Prompt):
         # else:
         #     lines.append("- No reliable correlated clues with enough support.")
 
-        lines.append(f"\nThe following languages are {lang_name}'s phylogenetic neighbours. Observations for each phylogenetic neighbour's related typological features are listed.")
+        lines.append(f"\nThe following languages are {lang_name}'s phylogenetic neighbours (observation for anchor features, and {feature} if available, are listed):")
         lines.extend(
             self._format_neighbor_block(
                 kb, language, phylo_neighbors, phylo_candidates, feature, correlated,
@@ -624,15 +624,13 @@ class ICLPrompt(Prompt):
             )
         )
 
-        lines.append(f"\nThe following languages are {lang_name}'s geographic neighbours. Observations for each geographic neighbour's related typological features are listed.")
+        lines.append(f"\nThe following languages are {lang_name}'s geographic neighbours (observation for anchor features, and {feature} if available, are listed):")
         lines.extend(
             self._format_neighbor_block(
                 kb, language, geo_neighbors, geo_candidates, feature, correlated,
                 mode="geographic",
             )
         )
-
-        prior_value, prior_ratio = self._feature_prevalence_prior(kb, feature)
 
         if self.include_vote_table:
             pv = self._count_votes(kb, phylo_neighbors, feature)
@@ -649,7 +647,8 @@ class ICLPrompt(Prompt):
             g_ratio = (gv["yes"] / g_denom) if g_denom else 0.0
             ov_ratio = (overall["yes"] / ov_denom) if ov_denom else 0.0
             agreement = (max(overall["yes"], overall["no"]) / ov_denom) if ov_denom else 0.0
-            lines.append(f"\nTarget-feature vote counts, representing many phylogenetically and geographically similar languages have the same value as {lang_name} for the {feature} feature:")
+            lines.append(f"\nTarget feature vote counts.")
+            lines.append(f"How many phylogenetically and geographically similar languages have the same value as {lang_name} for the {feature} feature:")
             lines.append(
                 f"- Phylogenetic neighbour votes: {pv['yes']} yes / {pv['no']} no / {pv['missing']} unkown ({p_ratio:.0%} yes)"
             )
@@ -672,7 +671,8 @@ class ICLPrompt(Prompt):
         phylo_no = self._nearest_supporting_neighbor(kb, language, phylo_candidates, feature, 0, "phylogenetic")
         geo_yes = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 1, "geographic")
         geo_no = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 0, "geographic")
-        lines.append("\nThe closest neighbors (by phylogeny and geography) supporting each possible value:")
+        lines.append("\nContrastive evidence.")
+        lines.append("The closest neighbors (by phylogeny and geography) supporting each possible value:")
         lines.append(f"- Closest phylogenetic neighbour supporting value 1: {phylo_yes or 'none observed'}")
         lines.append(f"- Closest phylogenetic neighbour supporting value 0: {phylo_no or 'none observed'}")
         lines.append(f"- Closest geographic neighbour supporting value 1: {geo_yes or 'none observed'}")
@@ -682,7 +682,7 @@ class ICLPrompt(Prompt):
         # lines.append("Predict the missing value for the following feature:")
         # lines.append(f"- Feature: {feature}")
         # lines.append("- Allowed values: 0 | 1")
-        lines.append("Reasoning guidance:")
+        lines.append("\nReasoning guidance:")
         lines.append("- Compare the support for value 0 versus value 1.")
         lines.append(
             "- Weigh all evidence (observed anchor features and neighbour counts) holistically."
@@ -697,24 +697,24 @@ class ICLPrompt(Prompt):
         # lines.append(
         #     f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value})."
         # )
-        lines.append("Output format (STRICT JSON):")
-        lines.append("Output ONLY valid JSON.")
+        # lines.append("Output format (STRICT JSON):")
+        lines.append("\nOutput format: valid JSON only.")
         lines.append(
-            "\nReturn exactly one minified JSON object on one line with keys: value, confidence, rationale."
+            "Return exactly one minified JSON object on one line with keys: value, confidence, rationale:"
         )
-        lines.append("- Value: either 1 or 0.")
+        lines.append("- Rationale: at most 2 sentences explaining your reasoning.")
+        lines.append("- Value: the value prediction, either 1 or 0.")
         lines.append("- Confidence: low, medium, or high")
-        lines.append("- Rationale: at most 3 sentences.")
         # lines.append("No Markdown, no prose, no code fences, no trailing text.")
-        lines.append("Example outputs:")
+        lines.append("\nExample outputs:")
         lines.append(
-            '{"value":"1","confidence":"medium","rationale":"While the majority of neighbors overall support 0, the closest phylogenetic neighbour languages support 1."}'
+            '{"rationale":"While the majority of neighbors overall support 0, the closest phylogenetic neighbour languages support 1.", "value":"1","confidence":"medium"}'
         )
         lines.append(
-            '{"value":"1","confidence":"high","rationale":"The observed anchor features are known to support 1 when they are 0. Furthermore, phylogenetic neighbours align strongly with value 1."}'
+            '{"rationale":"The observed anchor features are known to support 1 when they are 0. Furthermore, phylogenetic neighbours align strongly with value 1.", "value":"1","confidence":"high"}'
         )
         lines.append(
-            '{"value":"0","confidence":"low","rationale":"The evidence is balanced as many neighbours support both values. However, among languages sharing the same values for anchor features, more languages support 0 overall."}'
+            '{"rationale":"The evidence is balanced as many neighbours support both values. However, among languages sharing the same values for anchor features, more languages support 0 overall.", "value":"0","confidence":"low"}'
         )
 
         return PromptPayload(
