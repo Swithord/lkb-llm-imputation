@@ -607,11 +607,11 @@ class ICLPrompt(Prompt):
             for idx, clue in enumerate(clues, start=1):
                 lines.append(
                     f"{idx}) {clue['feature']}={clue['value']} -> "
-                    f"{clue['yes']} supports {feature} being 1 / {clue['no']} supports {feature} being 0"
+                    f"{clue['yes']} languages support {feature}=1 / {clue['no']} languages support {feature}=0"
                 )
             lines.append(
-                f"Overall: {clue_summary['yes']} support 1 / "
-                f"{clue_summary['no']} support 0 / {clue_summary['tie']} tie"
+                f"Overall: {clue_summary['yes']} features support 1 / "
+                f"{clue_summary['no']} features support 0 / {clue_summary['tie']} features are tied"
             )
         # else:
         #     lines.append("- No reliable correlated clues with enough support.")
@@ -624,7 +624,7 @@ class ICLPrompt(Prompt):
             )
         )
 
-        lines.append("\nThe following languages are {lang_name}'s geographic neighbours. Observations for each geographic neighbour's related typological features are listed.")
+        lines.append(f"\nThe following languages are {lang_name}'s geographic neighbours. Observations for each geographic neighbour's related typological features are listed.")
         lines.extend(
             self._format_neighbor_block(
                 kb, language, geo_neighbors, geo_candidates, feature, correlated,
@@ -660,10 +660,10 @@ class ICLPrompt(Prompt):
                 f"- Overall votes: {overall['yes']} yes / {overall['no']} no "
                 f"({ov_ratio:.0%} yes; agreement={agreement:.0%})"
             )
-            lines.append(
-                f"- Vote evidence coverage: {ov_denom} observed target-feature votes "
-                # f"(unknown ignored in decision)."
-            )
+            # lines.append(
+            #     f"- Vote evidence coverage: {ov_denom} observed target-feature votes "
+            #     # f"(unknown ignored in decision)."
+            # )
             # lines.append(
             #     f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
             # )
@@ -685,18 +685,18 @@ class ICLPrompt(Prompt):
         lines.append("Reasoning guidance:")
         lines.append("- Compare the support for value 0 versus value 1.")
         lines.append(
-            "- Weigh observed anchor features, nearest phylogenetic evidence, nearest geographic evidence, and correlated clues together."
+            "- Weigh all evidence (observed anchor features and neighbour counts) holistically."
         )
-        lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
+        # lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
         lines.append(
             "- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group."
         )
         lines.append(
-            "- It is acceptable to predict a minority value if it is better supported by the overall evidence."
+            "- You may predict a minority value if it is better supported by the overall evidence."
         )
-        lines.append(
-            f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value})."
-        )
+        # lines.append(
+        #     f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value})."
+        # )
         lines.append("Output format (STRICT JSON):")
         lines.append("Output ONLY valid JSON.")
         lines.append(
