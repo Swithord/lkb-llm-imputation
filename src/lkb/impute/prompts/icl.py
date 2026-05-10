@@ -723,7 +723,7 @@ class ICLPrompt(Prompt):
             '{"rationale":"While most neighbors support 0, the closest phylogenetic neighbours support 1.", "value":"1","confidence":"medium"}'
         )
         lines.append(
-            f'{"rationale":"The feature [...] being 0 supports {feature}=1. Furthermore, phylogenetic neighbours align strongly with value 1.", "value":"1","confidence":"high"}'
+            f'{"rationale":"The feature ... being 0 supports {feature}=1. Furthermore, phylogenetic neighbours align strongly with value 1.", "value":"1","confidence":"high"}'
         )
         lines.append(
             '{"rationale":"The evidence is balanced as many neighbours support both values. However, more languages with the same anchor feature values support 0.", "value":"0","confidence":"low"}'
