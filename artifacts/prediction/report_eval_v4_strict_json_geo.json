@@ -1,0 +1,68 @@
+{
+  "confidence_map": {
+    "low": 0.33,
+    "medium": 0.66,
+    "high": 0.9
+  },
+  "counts": {
+    "overall": {
+      "n": 1200
+    },
+    "hrl": {
+      "n": 400
+    },
+    "lrl": {
+      "n": 400
+    },
+    "mrl": {
+      "n": 400
+    }
+  },
+  "metrics": {
+    "overall": {
+      "accuracy": 0.8475,
+      "precision": 0.6622641509433962,
+      "recall": 0.9887323943661972,
+      "f1": 0.7932203389830508,
+      "parsed_rate": 1.0,
+      "high_conf_accuracy": 0.9955506117908788,
+      "high_conf_coverage": 0.7491666666666666,
+      "rationale_ok_rate": 1.0
+    },
+    "hrl": {
+      "accuracy": 0.8775,
+      "precision": 0.7539267015706806,
+      "recall": 0.9863013698630136,
+      "f1": 0.8545994065281899,
+      "parsed_rate": 1.0,
+      "high_conf_accuracy": 0.9938461538461538,
+      "high_conf_coverage": 0.8125,
+      "rationale_ok_rate": 1.0
+    },
+    "lrl": {
+      "accuracy": 0.825,
+      "precision": 0.5868263473053892,
+      "recall": 0.98989898989899,
+      "f1": 0.7368421052631579,
+      "parsed_rate": 1.0,
+      "high_conf_accuracy": 0.9964028776978417,
+      "high_conf_coverage": 0.695,
+      "rationale_ok_rate": 1.0
+    },
+    "mrl": {
+      "accuracy": 0.84,
+      "precision": 0.6337209302325582,
+      "recall": 0.990909090909091,
+      "f1": 0.7730496453900709,
+      "parsed_rate": 1.0,
+      "high_conf_accuracy": 0.9966216216216216,
+      "high_conf_coverage": 0.74,
+      "rationale_ok_rate": 1.0
+    }
+  },
+  "calibration": {
+    "brier_on_correctness": 0.10689150000000062,
+    "ece_10bin": 0.1960833333333436,
+    "n_with_valid_confidence": 1200
+  }
+}
