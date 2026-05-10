@@ -630,27 +630,27 @@ class ICLPrompt(Prompt):
             )
 
         if self.include_vote_table and (self.include_phylo_neighbors or self.include_geo_neighbors):
+            prior_value, prior_ratio = self._feature_prevalence_prior(kb, feature)
             if self.include_phylo_neighbors and self.include_geo_neighbors:
-                neighbour_desc = "phylogenetically and geographically similar"
+                neighbour_desc = "phylogenetic and geographic"
             elif self.include_phylo_neighbors:
-                neighbour_desc = "phylogenetically similar"
+                neighbour_desc = "phylogenetic"
             else:
-                neighbour_desc = "geographically similar"
-            lines.append(f"\nTarget feature vote counts.")
-            lines.append(f"How many {neighbour_desc} languages have the same value as {lang_name} for the {feature} feature:")
+                neighbour_desc = "geographic"
+            lines.append(f"\nVote summary across selected {neighbour_desc} neighbours:")
             if self.include_phylo_neighbors:
                 pv = self._count_votes(kb, phylo_neighbors, feature)
                 p_denom = pv["yes"] + pv["no"]
                 p_ratio = (pv["yes"] / p_denom) if p_denom else 0.0
                 lines.append(
-                    f"- Phylogenetic neighbour votes: {pv['yes']} yes / {pv['no']} no / {pv['missing']} unknown ({p_ratio:.0%} yes)"
+                    f"- Phylogenetic: {pv['yes']} yes / {pv['no']} no / {pv['missing']} missing ({p_ratio:.0%} yes)"
                 )
             if self.include_geo_neighbors:
                 gv = self._count_votes(kb, geo_neighbors, feature)
                 g_denom = gv["yes"] + gv["no"]
                 g_ratio = (gv["yes"] / g_denom) if g_denom else 0.0
                 lines.append(
-                    f"- Geographic neighbour votes: {gv['yes']} yes / {gv['no']} no / {gv['missing']} unknown ({g_ratio:.0%} yes)"
+                    f"- Geographic: {gv['yes']} yes / {gv['no']} no / {gv['missing']} missing ({g_ratio:.0%} yes)"
                 )
             if self.include_phylo_neighbors and self.include_geo_neighbors:
                 overall = {"yes": pv["yes"] + gv["yes"], "no": pv["no"] + gv["no"]}
@@ -658,9 +658,15 @@ class ICLPrompt(Prompt):
                 ov_ratio = (overall["yes"] / ov_denom) if ov_denom else 0.0
                 agreement = (max(overall["yes"], overall["no"]) / ov_denom) if ov_denom else 0.0
                 lines.append(
-                    f"- Overall votes: {overall['yes']} yes / {overall['no']} no "
+                    f"- Combined: {overall['yes']} yes / {overall['no']} no "
                     f"({ov_ratio:.0%} yes; agreement={agreement:.0%})"
                 )
+                lines.append(f"- {ov_denom} of the selected neighbours have an observed value for this feature.")
+            elif self.include_phylo_neighbors:
+                lines.append(f"- {p_denom} of the selected neighbours have an observed value for this feature.")
+            else:
+                lines.append(f"- {g_denom} of the selected neighbours have an observed value for this feature.")
+            lines.append(f"- Global base rate: {prior_value} ({prior_ratio:.0%} of all documented languages) — use only as a tiebreaker.")
 
         if self.include_phylo_neighbors or self.include_geo_neighbors:
             lines.append("\nContrastive evidence.")
@@ -696,17 +702,9 @@ class ICLPrompt(Prompt):
         # lines.append(f"- Feature: {feature}")
         # lines.append("- Allowed values: 0 | 1")
         lines.append("\nReasoning guidance:")
-        lines.append("- Compare the support for value 0 versus value 1.")
-        lines.append(
-            "- Weigh all evidence (observed anchor features and neighbour counts) holistically."
-        )
-        # lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
-        lines.append(
-            "- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group."
-        )
-        lines.append(
-            "- You may predict a minority value if it is better supported by the overall evidence."
-        )
+        lines.append("- Weigh all available evidence: anchor features, neighbour observations, and vote counts.")
+        lines.append("- Vote counts are a hint, but are not absolute. A single close neighbour can outweigh many distant ones.")
+        lines.append("- Predict a minority value if the closest or most relevant evidence supports it.")
         # lines.append("Output format (STRICT JSON):")
         lines.append("\nOutput format: valid JSON only.")
         lines.append(
