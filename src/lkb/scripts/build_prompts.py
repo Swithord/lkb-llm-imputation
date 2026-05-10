@@ -45,6 +45,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build prompts JSONL from gold JSONL.")
     parser.add_argument("--gold", required=True, help="Gold JSONL path")
     parser.add_argument("--prompt", default="icl", choices=["icl", "kg"])
+    parser.add_argument("--version", default="v4_strict_json")
+    parser.add_argument("--include_anchor_features", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--include_phylo_neighbors", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--include_geo_neighbors", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--include_vote_table", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--retrieval_backend", default="hybrid_flat_kg", choices=list(_RETRIEVERS))
     parser.add_argument("--top_n_features", type=int, default=10)
@@ -77,6 +81,9 @@ def main() -> None:
     if args.prompt == "icl":
         prompt = ICLPrompt(
             top_n_features=args.top_n_features,
+            include_anchor_features=args.include_anchor_features,
+            include_phylo_neighbors=args.include_phylo_neighbors,
+            include_geo_neighbors=args.include_geo_neighbors,
             include_vote_table=args.include_vote_table,
         )
     else:

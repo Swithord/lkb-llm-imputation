@@ -17,30 +17,64 @@
 
 set -euo pipefail
 
-MODE="${MODE:-all}"   # benchmark | full | all
+MODE="${MODE:-all}"        # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
 GOLD="${GOLD:-data/benchmark/gold_eval_2.jsonl}"
 OUT_DIR="${OUT_DIR:-artifacts/prediction}"
 PROMPT_VERSION="${PROMPT_VERSION:-v4_strict_json}"
-LEGACY_RUN_MODES="${LEGACY_RUN_MODES:-vote,novote}"   # comma-separated: vote,novote
+# Ablation configs to run (comma-separated subset of: base,anchors,phylo,geo,full)
+ABLATION_CONFIGS="${ABLATION_CONFIGS:-base,anchors,phylo,geo,full}"
 PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
 EXTRA_MODULES="${EXTRA_MODULES:-}"
 VENV_PATH="${VENV_PATH:-.venv}"
 INFER_DEVICE="${INFER_DEVICE:-cuda}"
+DTYPE="${DTYPE:-bfloat16}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-64}"
 
-mode_enabled() {
-  local mode="$1"
+config_enabled() {
+  local cfg="$1"
   local csv="$2"
   case ",$csv," in
-    *",$mode,"*) return 0 ;;
+    *",$cfg,"*) return 0 ;;
     *) return 1 ;;
   esac
 }
 
+# Emit build_prompts flags for a given ablation config.
+# base    = metadata only
+# anchors = + anchor features + correlated clues
+# phylo   = anchors + phylogenetic neighbours (+ vote table + contrastive)
+# geo     = anchors + geographic neighbours   (+ vote table + contrastive)
+# full    = anchors + both neighbour types    (+ vote table + contrastive)
+config_flags() {
+  local cfg="$1"
+  case "$cfg" in
+    base)
+      echo "--no-include_anchor_features --no-include_phylo_neighbors --no-include_geo_neighbors"
+      ;;
+    anchors)
+      echo "--include_anchor_features --no-include_phylo_neighbors --no-include_geo_neighbors"
+      ;;
+    phylo)
+      echo "--include_anchor_features --include_phylo_neighbors --no-include_geo_neighbors"
+      ;;
+    geo)
+      echo "--include_anchor_features --no-include_phylo_neighbors --include_geo_neighbors"
+      ;;
+    full)
+      echo "--include_anchor_features --include_phylo_neighbors --include_geo_neighbors"
+      ;;
+    *)
+      echo "Unknown ablation config: $cfg" >&2
+      return 1
+      ;;
+  esac
+}
+
 cd "$SLURM_SUBMIT_DIR"
+export PYTHONPATH="$SLURM_SUBMIT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 mkdir -p artifacts/logs "$OUT_DIR"
 
 if [[ -n "$PYTHON_MODULE" ]]; then
@@ -65,7 +99,7 @@ echo "HOST: $(hostname)"
 echo "which python: $(which python)"
 python --version
 echo "Gold file: $GOLD"
-echo "Legacy run modes: $LEGACY_RUN_MODES"
+echo "Ablation configs: $ABLATION_CONFIGS"
 python -c "import pandas; print('pandas ok')"
 python -c "import torch; print('torch ok')"
 
@@ -80,90 +114,58 @@ export TRANSFORMERS_NO_TF=1
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" artifacts/logs "$OUT_DIR"
 
 run_benchmark() {
-  NO_VOTE_PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_novote.jsonl"
-  VOTE_PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_vote.jsonl"
-  NO_VOTE_PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_novote.jsonl"
-  VOTE_PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_vote.jsonl"
-  NO_VOTE_REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_novote.json"
-  VOTE_REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_vote.json"
+  IFS=',' read -ra CONFIGS <<< "$ABLATION_CONFIGS"
+  for cfg in "${CONFIGS[@]}"; do
+    echo "=== Ablation config: $cfg ==="
+    PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${cfg}.jsonl"
+    PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_${cfg}.jsonl"
+    REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_${cfg}.json"
 
-  if mode_enabled "novote" "$LEGACY_RUN_MODES"; then
+    # shellcheck disable=SC2046
     python -m lkb.scripts.build_prompts \
       --gold "$GOLD" \
       --prompt icl \
       --version "$PROMPT_VERSION" \
-      --no-include_vote_table \
-      --out "$NO_VOTE_PROMPTS"
-  fi
+      $(config_flags "$cfg") \
+      --out "$PROMPTS"
 
-  if mode_enabled "vote" "$LEGACY_RUN_MODES"; then
-    python -m lkb.scripts.build_prompts \
-      --gold "$GOLD" \
-      --prompt icl \
-      --version "$PROMPT_VERSION" \
-      --include_vote_table \
-      --out "$VOTE_PROMPTS"
-  fi
-
-  if mode_enabled "novote" "$LEGACY_RUN_MODES"; then
     python -m lkb.scripts.infer \
-      --in "$NO_VOTE_PROMPTS" \
-      --out "$NO_VOTE_PREDS" \
+      --in "$PROMPTS" \
+      --out "$PREDS" \
       --model "$MODEL" \
       --device "$INFER_DEVICE" \
+      --dtype "$DTYPE" \
       --batch_size "$BATCH_SIZE" \
       --max_new_tokens "$MAX_NEW_TOKENS"
-  fi
 
-  if mode_enabled "vote" "$LEGACY_RUN_MODES"; then
-    python -m lkb.scripts.infer \
-      --in "$VOTE_PROMPTS" \
-      --out "$VOTE_PREDS" \
-      --model "$MODEL" \
-      --device "$INFER_DEVICE" \
-      --batch_size "$BATCH_SIZE" \
-      --max_new_tokens "$MAX_NEW_TOKENS"
-  fi
-
-  if mode_enabled "novote" "$LEGACY_RUN_MODES"; then
     python -m lkb.scripts.evaluate \
       --gold "$GOLD" \
-      --pred "$NO_VOTE_PREDS" \
-      --report_out "$NO_VOTE_REPORT"
-  fi
+      --pred "$PREDS" \
+      --report_out "$REPORT"
+  done
 
-  if mode_enabled "vote" "$LEGACY_RUN_MODES"; then
-    python -m lkb.scripts.evaluate \
-      --gold "$GOLD" \
-      --pred "$VOTE_PREDS" \
-      --report_out "$VOTE_REPORT"
+  # Speed benchmark on the full config (or the last config run if full not present)
+  SPEED_PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_full.jsonl"
+  if [[ ! -f "$SPEED_PROMPTS" ]]; then
+    SPEED_PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${CONFIGS[-1]}.jsonl"
   fi
-
-  if [[ -f "$VOTE_PROMPTS" ]]; then
-    python -m lkb.scripts.speed_bench \
-      --in "$VOTE_PROMPTS" \
-      --model "$MODEL" \
-      --device "$INFER_DEVICE" \
-      --batch_size "$BATCH_SIZE" \
-      --max_new_tokens "$MAX_NEW_TOKENS" \
-      --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
-  elif [[ -f "$NO_VOTE_PROMPTS" ]]; then
-    python -m lkb.scripts.speed_bench \
-      --in "$NO_VOTE_PROMPTS" \
-      --model "$MODEL" \
-      --device "$INFER_DEVICE" \
-      --batch_size "$BATCH_SIZE" \
-      --max_new_tokens "$MAX_NEW_TOKENS" \
-      --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
-  fi
+  python -m lkb.scripts.speed_bench \
+    --in "$SPEED_PROMPTS" \
+    --model "$MODEL" \
+    --device "$INFER_DEVICE" \
+    --dtype "$DTYPE" \
+    --batch_size "$BATCH_SIZE" \
+    --max_new_tokens "$MAX_NEW_TOKENS" \
+    --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
 }
 
 run_full() {
+  # shellcheck disable=SC2046
   python -m lkb.scripts.build_prompts \
     --gold "$GOLD" \
     --prompt icl \
     --version "$PROMPT_VERSION" \
-    --include_vote_table \
+    $(config_flags "full") \
     --out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl"
 
   python -m lkb.scripts.infer \
@@ -171,6 +173,7 @@ run_full() {
     --out "$OUT_DIR/eval_missing_predictions_all_${PROMPT_VERSION}.jsonl" \
     --model "$MODEL" \
     --device "$INFER_DEVICE" \
+    --dtype "$DTYPE" \
     --batch_size "$BATCH_SIZE" \
     --max_new_tokens "$MAX_NEW_TOKENS"
 }

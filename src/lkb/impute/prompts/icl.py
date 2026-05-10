@@ -45,12 +45,18 @@ class ICLPrompt(Prompt):
         self,
         *,
         top_n_features: int = 10,
+        include_anchor_features: bool = True,
+        include_phylo_neighbors: bool = True,
+        include_geo_neighbors: bool = True,
         include_vote_table: bool = True,
         fallback_top_n: int = 15,
         min_clue_support: int = 12,
         max_clues: int = 2,
     ) -> None:
         self.top_n_features = top_n_features
+        self.include_anchor_features = include_anchor_features
+        self.include_phylo_neighbors = include_phylo_neighbors
+        self.include_geo_neighbors = include_geo_neighbors
         self.include_vote_table = include_vote_table
         self.fallback_top_n = fallback_top_n
         self.min_clue_support = min_clue_support
@@ -566,117 +572,123 @@ class ICLPrompt(Prompt):
 
         correlated = self._effective_correlated(kb, language, feature)
 
-        phylo_candidates = self._ranked_phylo_candidates(kb, language)
-        phylo_k = self._neighbor_k(len(kb.genetic_neighbors(language)))
-        phylo_yes_nb = self._nearest_with_value(kb, phylo_candidates, feature, 1)
-        phylo_neighbors = self._select_neighbors(
-            kb,
-            phylo_candidates,
-            correlated,
-            feature,
-            phylo_k,
-            force_include=[phylo_yes_nb] if phylo_yes_nb else (),
-            reference_language=language,
-        )
+        phylo_candidates: List[str] = []
+        phylo_neighbors: List[str] = []
+        if self.include_phylo_neighbors:
+            phylo_candidates = self._ranked_phylo_candidates(kb, language)
+            phylo_k = self._neighbor_k(len(kb.genetic_neighbors(language)))
+            phylo_yes_nb = self._nearest_with_value(kb, phylo_candidates, feature, 1)
+            phylo_neighbors = self._select_neighbors(
+                kb,
+                phylo_candidates,
+                correlated,
+                feature,
+                phylo_k,
+                force_include=[phylo_yes_nb] if phylo_yes_nb else (),
+                reference_language=language,
+            )
 
-        geo_candidates = self._ranked_geo_candidates(kb, language)
-        geo_k = self._neighbor_k(len(kb.geographic_neighbors(language)))
-        geo_yes_nb = self._nearest_with_value(kb, geo_candidates, feature, 1)
-        geo_neighbors = self._select_neighbors(
-            kb,
-            geo_candidates,
-            correlated,
-            feature,
-            geo_k,
-            force_include=[geo_yes_nb] if geo_yes_nb else (),
-            reference_language=language,
-        )
+        geo_candidates: List[str] = []
+        geo_neighbors: List[str] = []
+        if self.include_geo_neighbors:
+            geo_candidates = self._ranked_geo_candidates(kb, language)
+            geo_k = self._neighbor_k(len(kb.geographic_neighbors(language)))
+            geo_yes_nb = self._nearest_with_value(kb, geo_candidates, feature, 1)
+            geo_neighbors = self._select_neighbors(
+                kb,
+                geo_candidates,
+                correlated,
+                feature,
+                geo_k,
+                force_include=[geo_yes_nb] if geo_yes_nb else (),
+                reference_language=language,
+            )
 
-        anchors = self._observed_anchor_facts(kb, language, feature)
-        if anchors:
-            lines.append(f"\nThe following are {lang_name}'s observed typological features that correlate with the {feature} feature ('anchor features'):")
-            for feat_name, feat_value in anchors:
-                lines.append(f"- {feat_name}: {feat_value}")
-        # else:
-        #     lines.append("- (no observed anchor facts)")
+        if self.include_anchor_features:
+            anchors = self._observed_anchor_facts(kb, language, feature)
+            if anchors:
+                lines.append(f"\nThe following are {lang_name}'s observed typological features that correlate with the {feature} feature ('anchor features'):")
+                for feat_name, feat_value in anchors:
+                    lines.append(f"- {feat_name}: {feat_value}")
 
-        clues, clue_summary = self._collect_clues(kb, language, feature)
-        if clues:
-            lines.append(
-                "\nAcross the knowledge base generally, when languages exhibit the same values for anchor features:")
-            for idx, clue in enumerate(clues, start=1):
+            clues, clue_summary = self._collect_clues(kb, language, feature)
+            if clues:
                 lines.append(
-                    f"{idx}) {clue['feature']}={clue['value']} -> "
-                    f"{clue['yes']} languages support {feature}=1 / {clue['no']} languages support {feature}=0"
+                    "\nAcross the knowledge base generally, when languages exhibit the same values for anchor features:")
+                for idx, clue in enumerate(clues, start=1):
+                    lines.append(
+                        f"{idx}) {clue['feature']}={clue['value']} -> "
+                        f"{clue['yes']} languages support {feature}=1 / {clue['no']} languages support {feature}=0"
+                    )
+                lines.append(
+                    f"Overall: {clue_summary['yes']} features support 1 / "
+                    f"{clue_summary['no']} features support 0 / {clue_summary['tie']} features are tied"
                 )
-            lines.append(
-                f"Overall: {clue_summary['yes']} features support 1 / "
-                f"{clue_summary['no']} features support 0 / {clue_summary['tie']} features are tied"
-            )
-        # else:
-        #     lines.append("- No reliable correlated clues with enough support.")
 
-        lines.append(f"\nThe following languages are {lang_name}'s phylogenetic neighbours (observation for anchor features, and {feature} if available, are listed):")
-        lines.extend(
-            self._format_neighbor_block(
-                kb, language, phylo_neighbors, phylo_candidates, feature, correlated,
-                mode="phylogenetic",
+        if self.include_phylo_neighbors:
+            lines.append(f"\nThe following languages are {lang_name}'s phylogenetic neighbours (observation for anchor features, and {feature} if available, are listed):")
+            lines.extend(
+                self._format_neighbor_block(
+                    kb, language, phylo_neighbors, phylo_candidates, feature, correlated,
+                    mode="phylogenetic",
+                )
             )
-        )
 
-        lines.append(f"\nThe following languages are {lang_name}'s geographic neighbours (observation for anchor features, and {feature} if available, are listed):")
-        lines.extend(
-            self._format_neighbor_block(
-                kb, language, geo_neighbors, geo_candidates, feature, correlated,
-                mode="geographic",
+        if self.include_geo_neighbors:
+            lines.append(f"\nThe following languages are {lang_name}'s geographic neighbours (observation for anchor features, and {feature} if available, are listed):")
+            lines.extend(
+                self._format_neighbor_block(
+                    kb, language, geo_neighbors, geo_candidates, feature, correlated,
+                    mode="geographic",
+                )
             )
-        )
 
-        if self.include_vote_table:
-            pv = self._count_votes(kb, phylo_neighbors, feature)
-            gv = self._count_votes(kb, geo_neighbors, feature)
-            overall = {
-                "yes": pv["yes"] + gv["yes"],
-                "no": pv["no"] + gv["no"],
-                "missing": pv["missing"] + gv["missing"],
-            }
-            p_denom = pv["yes"] + pv["no"]
-            g_denom = gv["yes"] + gv["no"]
-            ov_denom = overall["yes"] + overall["no"]
-            p_ratio = (pv["yes"] / p_denom) if p_denom else 0.0
-            g_ratio = (gv["yes"] / g_denom) if g_denom else 0.0
-            ov_ratio = (overall["yes"] / ov_denom) if ov_denom else 0.0
-            agreement = (max(overall["yes"], overall["no"]) / ov_denom) if ov_denom else 0.0
+        if self.include_vote_table and (self.include_phylo_neighbors or self.include_geo_neighbors):
+            if self.include_phylo_neighbors and self.include_geo_neighbors:
+                neighbour_desc = "phylogenetically and geographically similar"
+            elif self.include_phylo_neighbors:
+                neighbour_desc = "phylogenetically similar"
+            else:
+                neighbour_desc = "geographically similar"
             lines.append(f"\nTarget feature vote counts.")
-            lines.append(f"How many phylogenetically and geographically similar languages have the same value as {lang_name} for the {feature} feature:")
-            lines.append(
-                f"- Phylogenetic neighbour votes: {pv['yes']} yes / {pv['no']} no / {pv['missing']} unkown ({p_ratio:.0%} yes)"
-            )
-            lines.append(
-                f"- Geographic neighbour votes: {gv['yes']} yes / {gv['no']} no / {gv['missing']} unkown ({g_ratio:.0%} yes)"
-            )
-            lines.append(
-                f"- Overall votes: {overall['yes']} yes / {overall['no']} no "
-                f"({ov_ratio:.0%} yes; agreement={agreement:.0%})"
-            )
-            # lines.append(
-            #     f"- Vote evidence coverage: {ov_denom} observed target-feature votes "
-            #     # f"(unknown ignored in decision)."
-            # )
-            # lines.append(
-            #     f"- Weak prevalence prior (tie-breaker only): value={prior_value} ({prior_ratio:.0%} of observed)"
-            # )
+            lines.append(f"How many {neighbour_desc} languages have the same value as {lang_name} for the {feature} feature:")
+            if self.include_phylo_neighbors:
+                pv = self._count_votes(kb, phylo_neighbors, feature)
+                p_denom = pv["yes"] + pv["no"]
+                p_ratio = (pv["yes"] / p_denom) if p_denom else 0.0
+                lines.append(
+                    f"- Phylogenetic neighbour votes: {pv['yes']} yes / {pv['no']} no / {pv['missing']} unknown ({p_ratio:.0%} yes)"
+                )
+            if self.include_geo_neighbors:
+                gv = self._count_votes(kb, geo_neighbors, feature)
+                g_denom = gv["yes"] + gv["no"]
+                g_ratio = (gv["yes"] / g_denom) if g_denom else 0.0
+                lines.append(
+                    f"- Geographic neighbour votes: {gv['yes']} yes / {gv['no']} no / {gv['missing']} unknown ({g_ratio:.0%} yes)"
+                )
+            if self.include_phylo_neighbors and self.include_geo_neighbors:
+                overall = {"yes": pv["yes"] + gv["yes"], "no": pv["no"] + gv["no"]}
+                ov_denom = overall["yes"] + overall["no"]
+                ov_ratio = (overall["yes"] / ov_denom) if ov_denom else 0.0
+                agreement = (max(overall["yes"], overall["no"]) / ov_denom) if ov_denom else 0.0
+                lines.append(
+                    f"- Overall votes: {overall['yes']} yes / {overall['no']} no "
+                    f"({ov_ratio:.0%} yes; agreement={agreement:.0%})"
+                )
 
-        phylo_yes = self._nearest_supporting_neighbor(kb, language, phylo_candidates, feature, 1, "phylogenetic")
-        phylo_no = self._nearest_supporting_neighbor(kb, language, phylo_candidates, feature, 0, "phylogenetic")
-        geo_yes = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 1, "geographic")
-        geo_no = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 0, "geographic")
-        lines.append("\nContrastive evidence.")
-        lines.append("The closest neighbors (by phylogeny and geography) supporting each possible value:")
-        lines.append(f"- Closest phylogenetic neighbour supporting value 1: {phylo_yes or 'none observed'}")
-        lines.append(f"- Closest phylogenetic neighbour supporting value 0: {phylo_no or 'none observed'}")
-        lines.append(f"- Closest geographic neighbour supporting value 1: {geo_yes or 'none observed'}")
-        lines.append(f"- Closest geographic neighbour supporting value 0: {geo_no or 'none observed'}")
+        if self.include_phylo_neighbors or self.include_geo_neighbors:
+            lines.append("\nContrastive evidence.")
+            lines.append("The closest neighbors (by phylogeny and geography) supporting each possible value:")
+            if self.include_phylo_neighbors:
+                phylo_yes = self._nearest_supporting_neighbor(kb, language, phylo_candidates, feature, 1, "phylogenetic")
+                phylo_no = self._nearest_supporting_neighbor(kb, language, phylo_candidates, feature, 0, "phylogenetic")
+                lines.append(f"- Closest phylogenetic neighbour supporting value 1: {phylo_yes or 'none observed'}")
+                lines.append(f"- Closest phylogenetic neighbour supporting value 0: {phylo_no or 'none observed'}")
+            if self.include_geo_neighbors:
+                geo_yes = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 1, "geographic")
+                geo_no = self._nearest_supporting_neighbor(kb, language, geo_candidates, feature, 0, "geographic")
+                lines.append(f"- Closest geographic neighbour supporting value 1: {geo_yes or 'none observed'}")
+                lines.append(f"- Closest geographic neighbour supporting value 0: {geo_no or 'none observed'}")
 
         lines.append(f"\nTask: Predict the missing value for the feature {feature} (allowed values: 0, 1).")
         # lines.append("Predict the missing value for the following feature:")
@@ -708,13 +720,13 @@ class ICLPrompt(Prompt):
         # lines.append("No Markdown, no prose, no code fences, no trailing text.")
         lines.append("\nExample outputs:")
         lines.append(
-            '{"rationale":"While the majority of neighbors overall support 0, the closest phylogenetic neighbour languages support 1.", "value":"1","confidence":"medium"}'
+            '{"rationale":"While most neighbors support 0, the closest phylogenetic neighbours support 1.", "value":"1","confidence":"medium"}'
         )
         lines.append(
-            '{"rationale":"The observed anchor features are known to support 1 when they are 0. Furthermore, phylogenetic neighbours align strongly with value 1.", "value":"1","confidence":"high"}'
+            f'{"rationale":"The feature [...] being 0 supports {feature}=1. Furthermore, phylogenetic neighbours align strongly with value 1.", "value":"1","confidence":"high"}'
         )
         lines.append(
-            '{"rationale":"The evidence is balanced as many neighbours support both values. However, among languages sharing the same values for anchor features, more languages support 0 overall.", "value":"0","confidence":"low"}'
+            '{"rationale":"The evidence is balanced as many neighbours support both values. However, more languages with the same anchor feature values support 0.", "value":"0","confidence":"low"}'
         )
 
         return PromptPayload(
