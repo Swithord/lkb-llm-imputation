@@ -611,20 +611,6 @@ class ICLPrompt(Prompt):
                 for feat_name, feat_value in anchors:
                     lines.append(f"- {feat_name}: {feat_value}")
 
-            clues, clue_summary = self._collect_clues(kb, language, feature)
-            if clues:
-                lines.append(
-                    "\nAcross the knowledge base generally, when languages exhibit the same values for anchor features:")
-                for idx, clue in enumerate(clues, start=1):
-                    lines.append(
-                        f"{idx}) {clue['feature']}={clue['value']} -> "
-                        f"{clue['yes']} languages support {feature}=1 / {clue['no']} languages support {feature}=0"
-                    )
-                lines.append(
-                    f"Overall: {clue_summary['yes']} features support 1 / "
-                    f"{clue_summary['no']} features support 0 / {clue_summary['tie']} features are tied"
-                )
-
         if self.include_phylo_neighbors:
             lines.append(f"\nThe following languages are {lang_name}'s phylogenetic neighbours (observation for anchor features, and {feature} if available, are listed):")
             lines.extend(
@@ -690,41 +676,55 @@ class ICLPrompt(Prompt):
                 lines.append(f"- Closest geographic neighbour supporting value 1: {geo_yes or 'none observed'}")
                 lines.append(f"- Closest geographic neighbour supporting value 0: {geo_no or 'none observed'}")
 
-        prior_value, prior_ratio = self._feature_prevalence_prior(kb, feature)
+        if self.include_anchor_features:
+            clues, clue_summary = self._collect_clues(kb, language, feature)
+            if clues:
+                lines.append(
+                    "\nAcross the knowledge base generally, when languages exhibit the same values for anchor features:")
+                for idx, clue in enumerate(clues, start=1):
+                    lines.append(
+                        f"{idx}) {clue['feature']}={clue['value']} -> "
+                        f"{clue['yes']} languages support {feature}=1 / {clue['no']} languages support {feature}=0"
+                    )
+                lines.append(
+                    f"Overall: {clue_summary['yes']} features support 1 / "
+                    f"{clue_summary['no']} features support 0 / {clue_summary['tie']} features are tied"
+                )
 
         lines.append(f"\nTask: Predict the missing value for the feature {feature} (allowed values: 0, 1).")
-        lines.append("Reasoning guidance:")
+        # lines.append("Predict the missing value for the following feature:")
+        # lines.append(f"- Feature: {feature}")
+        # lines.append("- Allowed values: 0 | 1")
+        lines.append("\nReasoning guidance:")
         lines.append("- Compare the support for value 0 versus value 1.")
         lines.append(
-            "- Weigh observed anchor features, nearest phylogenetic evidence, nearest geographic evidence, and correlated clues together."
+            "- Weigh all evidence (observed anchor features and neighbour counts) holistically."
         )
-        lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
+        # lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
         lines.append(
             "- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group."
         )
         lines.append(
-            "- It is acceptable to predict a minority value if it is better supported by the overall evidence."
+            "- You may predict a minority value if it is better supported by the overall evidence."
         )
+        # lines.append("Output format (STRICT JSON):")
+        lines.append("\nOutput format: valid JSON only.")
         lines.append(
-            f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value})."
+            "Return exactly one minified JSON object on one line with keys: value, confidence, rationale:"
         )
-        lines.append("Output format (STRICT JSON):")
-        lines.append("Output ONLY valid JSON.")
-        lines.append(
-            "\nReturn exactly one minified JSON object on one line with keys: value, confidence, rationale."
-        )
-        lines.append("- Value: either 1 or 0.")
+        lines.append("- Rationale: at most 20 words.")
+        lines.append("- Value: the value prediction, either 1 or 0.")
         lines.append("- Confidence: low, medium, or high")
-        lines.append("- Rationale: at most 2 sentences explaining your reasoning.")
-        lines.append("Example outputs:")
+        lines.append("No Markdown, no prose, no code fences, no trailing text.")
+        lines.append("Few-shot examples:")
         lines.append(
-            '{"value":"1","confidence":"medium","rationale":"While the majority of neighbors overall support 0, the closest phylogenetic neighbour languages support 1."}'
+            '{"rationale":"Most neighbors are 0, but the closest and most similar languages support 1.", "value":"1","confidence":"medium"}'
         )
         lines.append(
-            '{"value":"1","confidence":"high","rationale":"The observed anchor features are known to support 1 when they are 0. Furthermore, phylogenetic neighbours align strongly with value 1."}'
+            '{"rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1.", "value":"1","confidence":"high"}'
         )
         lines.append(
-            '{"value":"0","confidence":"low","rationale":"The evidence is balanced as many neighbours support both values. However, among languages sharing the same values for anchor features, more languages support 0 overall."}'
+            '{"rationale":"Evidence is balanced, so the weak prevalence prior favors 0.", "value":"0","confidence":"low"}'
         )
 
         return PromptPayload(
