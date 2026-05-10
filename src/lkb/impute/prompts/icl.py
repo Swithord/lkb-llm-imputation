@@ -666,7 +666,7 @@ class ICLPrompt(Prompt):
                 lines.append(f"- {p_denom} of the selected neighbours have an observed value for this feature.")
             else:
                 lines.append(f"- {g_denom} of the selected neighbours have an observed value for this feature.")
-            lines.append(f"- Global base rate: {prior_value} ({prior_ratio:.0%} of all documented languages) — use only as a tiebreaker.")
+            lines.append(f"- Global prevalence rate: {prior_value} ({prior_ratio:.0%} of all documented languages) — use only as a tiebreaker.")
 
         if self.include_phylo_neighbors or self.include_geo_neighbors:
             lines.append("\nContrastive evidence.")
@@ -702,10 +702,9 @@ class ICLPrompt(Prompt):
         # lines.append(f"- Feature: {feature}")
         # lines.append("- Allowed values: 0 | 1")
         lines.append("\nReasoning guidance:")
-        lines.append("- Weigh all available evidence: anchor features, neighbour observations, and vote counts.")
-        lines.append("- Vote counts are a hint, but are not absolute. A single close neighbour can outweigh many distant ones.")
-        lines.append("- Predict a minority value if the closest or most relevant evidence supports it.")
-        # lines.append("Output format (STRICT JSON):")
+        lines.append("- Weigh all evidence together: anchor features, vote counts, and neighbour observations.")
+        lines.append("- Vote counts are informative but not decisive; proximity and anchor-feature similarity matter.")
+        lines.append("- Predict the minority value only when the overall balance of evidence clearly favors it, not just one nearby neighbour.")
         lines.append("\nOutput format: valid JSON only.")
         lines.append(
             "Return exactly one minified JSON object on one line with keys: value, confidence, rationale:"
@@ -716,13 +715,13 @@ class ICLPrompt(Prompt):
         lines.append("No Markdown, no prose, no code fences, no trailing text.")
         lines.append("Few-shot examples:")
         lines.append(
-            '{"rationale":"Votes and closest neighbours all support 1; anchor features agree.", "value":"1","confidence":"high"}'
+            '{"rationale":"Phylogenetic and geographic neighbours strongly support 1; anchor features agree.", "value":"1","confidence":"high"}'
         )
         lines.append(
-            '{"rationale":"Nearest phylogenetic neighbour supports 1 and anchor features align, despite mixed geographic votes.", "value":"1","confidence":"medium"}'
+            '{"rationale":"Most neighbours support 0 and nearest geographic neighbour supports 0; one outlier does not change this.", "value":"0","confidence":"medium"}'
         )
         lines.append(
-            '{"rationale":"Votes are 80% for 0 and the nearest geographic neighbour supports 0; one distant outlier supporting 1 does not outweigh this.", "value":"0","confidence":"medium"}'
+            '{"rationale":"Evidence is mixed but anchor features and the global prevalence rate both favour 0.", "value":"0","confidence":"low"}'
         )
 
         return PromptPayload(
