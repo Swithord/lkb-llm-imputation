@@ -630,43 +630,14 @@ class ICLPrompt(Prompt):
             )
 
         if self.include_vote_table and (self.include_phylo_neighbors or self.include_geo_neighbors):
-            prior_value, prior_ratio = self._feature_prevalence_prior(kb, feature)
-            if self.include_phylo_neighbors and self.include_geo_neighbors:
-                neighbour_desc = "phylogenetic and geographic"
-            elif self.include_phylo_neighbors:
-                neighbour_desc = "phylogenetic"
-            else:
-                neighbour_desc = "geographic"
-            lines.append(f"\nVote summary across selected {neighbour_desc} neighbours:")
             if self.include_phylo_neighbors:
                 pv = self._count_votes(kb, phylo_neighbors, feature)
-                p_denom = pv["yes"] + pv["no"]
-                p_ratio = (pv["yes"] / p_denom) if p_denom else 0.0
-                lines.append(
-                    f"- Phylogenetic: {pv['yes']} yes / {pv['no']} no / {pv['missing']} missing ({p_ratio:.0%} yes)"
-                )
+                lines.append(f"\nPhylogenetic neighbour votes:")
+                lines.append(f"- yes: {pv['yes']} / no: {pv['no']} / missing: {pv['missing']}")
             if self.include_geo_neighbors:
                 gv = self._count_votes(kb, geo_neighbors, feature)
-                g_denom = gv["yes"] + gv["no"]
-                g_ratio = (gv["yes"] / g_denom) if g_denom else 0.0
-                lines.append(
-                    f"- Geographic: {gv['yes']} yes / {gv['no']} no / {gv['missing']} missing ({g_ratio:.0%} yes)"
-                )
-            if self.include_phylo_neighbors and self.include_geo_neighbors:
-                overall = {"yes": pv["yes"] + gv["yes"], "no": pv["no"] + gv["no"]}
-                ov_denom = overall["yes"] + overall["no"]
-                ov_ratio = (overall["yes"] / ov_denom) if ov_denom else 0.0
-                agreement = (max(overall["yes"], overall["no"]) / ov_denom) if ov_denom else 0.0
-                lines.append(
-                    f"- Combined: {overall['yes']} yes / {overall['no']} no "
-                    f"({ov_ratio:.0%} yes; agreement={agreement:.0%})"
-                )
-                lines.append(f"- {ov_denom} of the selected neighbours have an observed value for this feature.")
-            elif self.include_phylo_neighbors:
-                lines.append(f"- {p_denom} of the selected neighbours have an observed value for this feature.")
-            else:
-                lines.append(f"- {g_denom} of the selected neighbours have an observed value for this feature.")
-            lines.append(f"- Global prevalence rate: {prior_value} ({prior_ratio:.0%} of all documented languages) — use only as a tiebreaker.")
+                lines.append(f"\nGeographic neighbour votes:")
+                lines.append(f"- yes: {gv['yes']} / no: {gv['no']} / missing: {gv['missing']}")
 
         if self.include_phylo_neighbors or self.include_geo_neighbors:
             lines.append("\nContrastive evidence.")
@@ -698,30 +669,27 @@ class ICLPrompt(Prompt):
                 )
 
         lines.append(f"\nTask: Predict the missing value for the feature {feature} (allowed values: 0, 1).")
-        # lines.append("Predict the missing value for the following feature:")
-        # lines.append(f"- Feature: {feature}")
-        # lines.append("- Allowed values: 0 | 1")
         lines.append("\nReasoning guidance:")
-        lines.append("- Weigh all evidence together: anchor features, vote counts, and neighbour observations.")
-        lines.append("- Vote counts are informative but not decisive; proximity and anchor-feature similarity matter.")
-        lines.append("- Predict the minority value only when the overall balance of evidence clearly favors it, not just one nearby neighbour.")
+        lines.append("- Compare the support for value 0 versus value 1.")
+        lines.append("- Weigh all evidence (observed anchor features and neighbour counts) holistically.")
+        lines.append("- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group.")
+        lines.append("- You may predict a minority value if it is better supported by the overall evidence.")
         lines.append("\nOutput format: valid JSON only.")
         lines.append(
-            "Return exactly one minified JSON object on one line with keys: value, confidence, rationale:"
+            "Return exactly one minified JSON object on one line with keys: rationale, value, confidence:"
         )
-        lines.append("- Rationale: at most 20 words.")
+        lines.append("- Rationale: at most 2 sentences.")
         lines.append("- Value: the value prediction, either 1 or 0.")
         lines.append("- Confidence: low, medium, or high")
-        lines.append("No Markdown, no prose, no code fences, no trailing text.")
-        lines.append("Few-shot examples:")
+        lines.append("Example outputs:")
         lines.append(
-            '{"rationale":"Phylogenetic and geographic neighbours strongly support 1; anchor features agree.", "value":"1","confidence":"high"}'
+            '{"rationale":"While the majority of neighbors overall support 0, the closest phylogenetic neighbour languages support 1.", "value":"1","confidence":"medium"}'
         )
         lines.append(
-            '{"rationale":"Most neighbours support 0 and nearest geographic neighbour supports 0; one outlier does not change this.", "value":"0","confidence":"medium"}'
+            '{"rationale":"The observed anchor features are known to support 1 when they are 0. Furthermore, phylogenetic neighbours align strongly with value 1.", "value":"1","confidence":"high"}'
         )
         lines.append(
-            '{"rationale":"Evidence is mixed but anchor features and the global prevalence rate both favour 0.", "value":"0","confidence":"low"}'
+            '{"rationale":"The evidence is balanced as many neighbours support both values. However, among languages sharing the same values for anchor features, more languages support 0 overall.", "value":"0","confidence":"low"}'
         )
 
         return PromptPayload(
