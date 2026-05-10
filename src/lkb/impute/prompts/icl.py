@@ -690,43 +690,41 @@ class ICLPrompt(Prompt):
                 lines.append(f"- Closest geographic neighbour supporting value 1: {geo_yes or 'none observed'}")
                 lines.append(f"- Closest geographic neighbour supporting value 0: {geo_no or 'none observed'}")
 
+        prior_value, prior_ratio = self._feature_prevalence_prior(kb, feature)
+
         lines.append(f"\nTask: Predict the missing value for the feature {feature} (allowed values: 0, 1).")
-        # lines.append("Predict the missing value for the following feature:")
-        # lines.append(f"- Feature: {feature}")
-        # lines.append("- Allowed values: 0 | 1")
-        lines.append("\nReasoning guidance:")
+        lines.append("Reasoning guidance:")
         lines.append("- Compare the support for value 0 versus value 1.")
         lines.append(
-            "- Weigh all evidence (observed anchor features and neighbour counts) holistically."
+            "- Weigh observed anchor features, nearest phylogenetic evidence, nearest geographic evidence, and correlated clues together."
         )
-        # lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
+        lines.append("- Neighbor counts are useful, but do not follow majority vote blindly.")
         lines.append(
             "- A smaller number of closer or more relevant neighbors may outweigh a larger but weaker group."
         )
         lines.append(
-            "- You may predict a minority value if it is better supported by the overall evidence."
+            "- It is acceptable to predict a minority value if it is better supported by the overall evidence."
         )
-        # lines.append(
-        #     f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value})."
-        # )
-        # lines.append("Output format (STRICT JSON):")
-        lines.append("\nOutput format: valid JSON only.")
         lines.append(
-            "Return exactly one minified JSON object on one line with keys: value, confidence, rationale:"
+            f"- Use feature prevalence only as a weak tie-breaker when evidence is otherwise balanced (prior={prior_value})."
         )
-        lines.append("- Rationale: at most 2 sentences explaining your reasoning.")
-        lines.append("- Value: the value prediction, either 1 or 0.")
+        lines.append("Output format (STRICT JSON):")
+        lines.append("Output ONLY valid JSON.")
+        lines.append(
+            "\nReturn exactly one minified JSON object on one line with keys: value, confidence, rationale."
+        )
+        lines.append("- Value: either 1 or 0.")
         lines.append("- Confidence: low, medium, or high")
-        # lines.append("No Markdown, no prose, no code fences, no trailing text.")
-        lines.append("\nExample outputs:")
+        lines.append("- Rationale: at most 2 sentences explaining your reasoning.")
+        lines.append("Example outputs:")
         lines.append(
-            '{"rationale":"While most neighbors support 0, the closest phylogenetic neighbours support 1.", "value":"1","confidence":"medium"}'
+            '{"value":"1","confidence":"medium","rationale":"While the majority of neighbors overall support 0, the closest phylogenetic neighbour languages support 1."}'
         )
         lines.append(
-            f'{"rationale":"The feature ... being 0 supports {feature}=1. Furthermore, phylogenetic neighbours align strongly with value 1.", "value":"1","confidence":"high"}'
+            '{"value":"1","confidence":"high","rationale":"The observed anchor features are known to support 1 when they are 0. Furthermore, phylogenetic neighbours align strongly with value 1."}'
         )
         lines.append(
-            '{"rationale":"The evidence is balanced as many neighbours support both values. However, more languages with the same anchor feature values support 0.", "value":"0","confidence":"low"}'
+            '{"value":"0","confidence":"low","rationale":"The evidence is balanced as many neighbours support both values. However, among languages sharing the same values for anchor features, more languages support 0 overall."}'
         )
 
         return PromptPayload(
