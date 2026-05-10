@@ -716,13 +716,13 @@ class ICLPrompt(Prompt):
         lines.append("No Markdown, no prose, no code fences, no trailing text.")
         lines.append("Few-shot examples:")
         lines.append(
-            '{"rationale":"Most neighbors are 0, but the closest and most similar languages support 1.", "value":"1","confidence":"medium"}'
+            '{"rationale":"Votes and closest neighbours all support 1; anchor features agree.", "value":"1","confidence":"high"}'
         )
         lines.append(
-            '{"rationale":"Observed features and nearest phylogenetic evidence align strongly with value 1.", "value":"1","confidence":"high"}'
+            '{"rationale":"Nearest phylogenetic neighbour supports 1 and anchor features align, despite mixed geographic votes.", "value":"1","confidence":"medium"}'
         )
         lines.append(
-            '{"rationale":"Evidence is balanced, so the weak prevalence prior favors 0.", "value":"0","confidence":"low"}'
+            '{"rationale":"Votes are 80% for 0 and the nearest geographic neighbour supports 0; one distant outlier supporting 1 does not outweigh this.", "value":"0","confidence":"medium"}'
         )
 
         return PromptPayload(
