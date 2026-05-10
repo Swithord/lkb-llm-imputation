@@ -20,49 +20,49 @@
   },
   "metrics": {
     "overall": {
-      "accuracy": 0.6133333333333333,
-      "precision": 0.4074702886247878,
-      "recall": 0.676056338028169,
-      "f1": 0.5084745762711864,
+      "accuracy": 0.5191666666666667,
+      "precision": 0.3594936708860759,
+      "recall": 0.8,
+      "f1": 0.4960698689956332,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.7953216374269005,
-      "high_conf_coverage": 0.4275,
+      "high_conf_accuracy": 0.879746835443038,
+      "high_conf_coverage": 0.13166666666666665,
       "rationale_ok_rate": 1.0
     },
     "hrl": {
-      "accuracy": 0.615,
-      "precision": 0.48095238095238096,
-      "recall": 0.6917808219178082,
-      "f1": 0.5674157303370787,
+      "accuracy": 0.5275,
+      "precision": 0.42066420664206644,
+      "recall": 0.7808219178082192,
+      "f1": 0.5467625899280576,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.7701149425287356,
-      "high_conf_coverage": 0.435,
+      "high_conf_accuracy": 0.8620689655172413,
+      "high_conf_coverage": 0.145,
       "rationale_ok_rate": 1.0
     },
     "lrl": {
-      "accuracy": 0.585,
-      "precision": 0.32642487046632124,
-      "recall": 0.6363636363636364,
-      "f1": 0.4315068493150685,
+      "accuracy": 0.495,
+      "precision": 0.30268199233716475,
+      "recall": 0.797979797979798,
+      "f1": 0.43888888888888894,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.7924528301886793,
-      "high_conf_coverage": 0.3975,
+      "high_conf_accuracy": 0.9111111111111111,
+      "high_conf_coverage": 0.1125,
       "rationale_ok_rate": 1.0
     },
     "mrl": {
-      "accuracy": 0.64,
-      "precision": 0.40860215053763443,
-      "recall": 0.6909090909090909,
-      "f1": 0.5135135135135135,
+      "accuracy": 0.535,
+      "precision": 0.35271317829457366,
+      "recall": 0.8272727272727273,
+      "f1": 0.4945652173913044,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.8222222222222222,
-      "high_conf_coverage": 0.45,
+      "high_conf_accuracy": 0.8727272727272727,
+      "high_conf_coverage": 0.1375,
       "rationale_ok_rate": 1.0
     }
   },
   "calibration": {
-    "brier_on_correctness": 0.26189633333333134,
-    "ece_10bin": 0.22716666666666568,
+    "brier_on_correctness": 0.30737716666666537,
+    "ece_10bin": 0.30641666666667416,
     "n_with_valid_confidence": 1200
   }
 }

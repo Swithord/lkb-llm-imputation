@@ -20,49 +20,49 @@
   },
   "metrics": {
     "overall": {
-      "accuracy": 0.9258333333333333,
-      "precision": 0.805045871559633,
-      "recall": 0.9887323943661972,
-      "f1": 0.8874841972187105,
+      "accuracy": 0.8941666666666667,
+      "precision": 0.7394957983193278,
+      "recall": 0.9915492957746479,
+      "f1": 0.8471720818291215,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.9928122192273136,
-      "high_conf_coverage": 0.9275,
+      "high_conf_accuracy": 0.9923002887391723,
+      "high_conf_coverage": 0.8658333333333333,
       "rationale_ok_rate": 1.0
     },
     "hrl": {
-      "accuracy": 0.9325,
-      "precision": 0.8520710059171598,
+      "accuracy": 0.91,
+      "precision": 0.8089887640449438,
       "recall": 0.9863013698630136,
-      "f1": 0.9142857142857144,
+      "f1": 0.8888888888888888,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.9893048128342246,
-      "high_conf_coverage": 0.935,
+      "high_conf_accuracy": 0.9887005649717514,
+      "high_conf_coverage": 0.885,
       "rationale_ok_rate": 1.0
     },
     "lrl": {
-      "accuracy": 0.905,
-      "precision": 0.725925925925926,
+      "accuracy": 0.8675,
+      "precision": 0.6533333333333333,
       "recall": 0.98989898989899,
-      "f1": 0.8376068376068376,
+      "f1": 0.78714859437751,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.994475138121547,
-      "high_conf_coverage": 0.905,
+      "high_conf_accuracy": 0.9908256880733946,
+      "high_conf_coverage": 0.8175,
       "rationale_ok_rate": 1.0
     },
     "mrl": {
-      "accuracy": 0.94,
-      "precision": 0.8257575757575758,
-      "recall": 0.990909090909091,
-      "f1": 0.9008264462809917,
+      "accuracy": 0.905,
+      "precision": 0.7432432432432432,
+      "recall": 1.0,
+      "f1": 0.8527131782945736,
       "parsed_rate": 1.0,
-      "high_conf_accuracy": 0.9946949602122016,
-      "high_conf_coverage": 0.9425,
+      "high_conf_accuracy": 0.9972067039106145,
+      "high_conf_coverage": 0.895,
       "rationale_ok_rate": 1.0
     }
   },
   "calibration": {
-    "brier_on_correctness": 0.04486708333333298,
-    "ece_10bin": 0.1297750000000146,
+    "brier_on_correctness": 0.061790166666667035,
+    "ece_10bin": 0.13515000000001307,
     "n_with_valid_confidence": 1200
   }
 }
