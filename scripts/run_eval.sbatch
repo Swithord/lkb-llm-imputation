@@ -7,11 +7,11 @@
 #   sbatch --account=<acct> --gpus=a100:1 --mem=80G scripts/run_eval.sbatch
 #SBATCH --job-name=llm-impute-uriel
 #SBATCH --account=rrg-annielee
-#SBATCH --time=01:30:00
+#SBATCH --time=06:00:00
 #SBATCH --nodes=1
-#SBATCH --gpus=h100_3g.40gb:1
+#SBATCH --gpus=h100:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --mem=100G
 #SBATCH --output=artifacts/logs/%x-%j.out
 #SBATCH --error=artifacts/logs/%x-%j.err
 
@@ -86,13 +86,13 @@ fi
 for mod in $EXTRA_MODULES; do
   module load "$mod"
 done
-if [[ -f "$VENV_PATH/bin/activate" ]]; then
-  source "$VENV_PATH/bin/activate"
-else
-  echo "No virtualenv found at $VENV_PATH"
-  exit 1
-fi
-
+#if [[ -f "$VENV_PATH/bin/activate" ]]; then
+#  source "$VENV_PATH/bin/activate"
+#else
+#  echo "No virtualenv found at $VENV_PATH"
+#  exit 1
+#fi
+source ~/env/bin/activate
 # Debug checks
 echo "PWD: $(pwd)"
 echo "HOST: $(hostname)"
@@ -103,13 +103,15 @@ echo "Ablation configs: $ABLATION_CONFIGS"
 python -c "import pandas; print('pandas ok')"
 python -c "import torch; print('torch ok')"
 
-nvidia-smi
+#nvidia-smi
 
-export HF_HOME="${SCRATCH:-/tmp}/hf"
+#export HF_HOME="${SCRATCH:-/tmp}/hf"
 export TRANSFORMERS_CACHE="${SCRATCH:-/tmp}/hf/transformers"
 export HF_DATASETS_CACHE="${SCRATCH:-/tmp}/hf/datasets"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_NO_TF=1
+export HF_HUB_DISABLE_XET=1
+export HF_HOME=~/scratch/.cache/huggingface
 
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" artifacts/logs "$OUT_DIR"
 
@@ -125,7 +127,6 @@ run_benchmark() {
     python -m lkb.scripts.build_prompts \
       --gold "$GOLD" \
       --prompt icl \
-      --version "$PROMPT_VERSION" \
       $(config_flags "$cfg") \
       --out "$PROMPTS"
 
@@ -164,7 +165,6 @@ run_full() {
   python -m lkb.scripts.build_prompts \
     --gold "$GOLD" \
     --prompt icl \
-    --version "$PROMPT_VERSION" \
     $(config_flags "full") \
     --out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl"
 
