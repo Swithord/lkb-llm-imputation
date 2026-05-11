@@ -85,9 +85,11 @@ export HF_HUB_DISABLE_XET=1
 export HF_HOME=~/scratch/.cache/huggingface
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE"
 
-PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${cfg}.jsonl"
-PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_${cfg}.jsonl"
-REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_${cfg}.json"
+MODEL_SLUG="$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')"
+
+PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.jsonl"
+PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.jsonl"
+REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.json"
 
 # shellcheck disable=SC2046
 python -m lkb.scripts.build_prompts \
@@ -120,5 +122,5 @@ if [[ "$cfg" == "full" ]]; then
     --dtype "$DTYPE" \
     --batch_size "$BATCH_SIZE" \
     --max_new_tokens "$MAX_NEW_TOKENS" \
-    --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
+    --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}_${MODEL_SLUG}.json"
 fi
