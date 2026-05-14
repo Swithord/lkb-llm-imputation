@@ -7,7 +7,7 @@
 #   sbatch --account=<acct> --gpus=a100:1 --mem=80G scripts/run_eval.sbatch
 #SBATCH --job-name=llm-impute-benchmark
 #SBATCH --account=rrg-annielee
-#SBATCH --time=06:00:00
+#SBATCH --time=16:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=h100:2
 #SBATCH --cpus-per-task=8
