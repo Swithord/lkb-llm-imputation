@@ -12,8 +12,9 @@
 #SBATCH --gpus=h100_3g.40gb:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=40G
-#SBATCH --output=artifacts/logs/%x-%j.out
-#SBATCH --error=artifacts/logs/%x-%j.err
+#SBATCH --array=0-4
+#SBATCH --output=artifacts/logs/%x-%A_%a.out
+#SBATCH --error=artifacts/logs/%x-%A_%a.err
 
 set -euo pipefail
 
@@ -32,10 +33,20 @@ PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
 EXTRA_MODULES="${EXTRA_MODULES:-}"
 VENV_PATH="${VENV_PATH:-.venv}"
-INFER_DEVICE="${INFER_DEVICE:-cuda}"
-BATCH_SIZE="${BATCH_SIZE:-4}"
+INFER_DEVICE="${INFER_DEVICE:-auto}"
+DTYPE="${DTYPE:-bfloat16}"
+BATCH_SIZE="${BATCH_SIZE:-}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-64}"
 export GLOTTOLOG_PATH GEN_DETAIL KG_NODES KG_EDGES RETRIEVAL_BACKEND
+
+# Keep 8B behavior fast, but avoid OOM defaults on 70B-class models.
+if [[ -z "${BATCH_SIZE}" ]]; then
+  if [[ "${MODEL,,}" == *"70b"* ]]; then
+    BATCH_SIZE=1
+  else
+    BATCH_SIZE=4
+  fi
+fi
 
 mode_enabled() {
   local mode="$1"
@@ -45,6 +56,41 @@ mode_enabled() {
     *) return 1 ;;
   esac
 }
+
+CONFIGS=(base anchors phylo geo full)
+if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+  cfg="${CONFIGS[$SLURM_ARRAY_TASK_ID]}"
+else
+  cfg="${ABLATION_CONFIG:-full}"
+fi
+
+config_flags() {
+  # base    = metadata only
+  # anchors = + anchor features + correlated clues
+  # phylo   = anchors + phylogenetic neighbours (+ vote table + contrastive)
+  # geo     = anchors + geographic neighbours   (+ vote table + contrastive)
+  # full    = anchors + both neighbour types    (+ vote table + contrastive)
+  case "$1" in
+    base)    echo "--no-include_anchor_features --no-include_phylo_neighbors --no-include_geo_neighbors" ;;
+    anchors) echo "--include_anchor_features --no-include_phylo_neighbors --no-include_geo_neighbors" ;;
+    phylo)   echo "--include_anchor_features --include_phylo_neighbors --no-include_geo_neighbors" ;;
+    geo)     echo "--include_anchor_features --no-include_phylo_neighbors --include_geo_neighbors" ;;
+    full)    echo "--include_anchor_features --include_phylo_neighbors --include_geo_neighbors" ;;
+    *)       echo "Unknown ablation config: $1"; exit 1 ;;
+  esac
+}
+
+set -- $(config_flags "$cfg")
+ABLATION_FLAGS=("$@")
+
+EFFECTIVE_KG_RUN_MODES="$KG_RUN_MODES"
+EFFECTIVE_RETRIEVAL_BACKEND="$RETRIEVAL_BACKEND"
+if [[ "$cfg" == "phylo" || "$cfg" == "geo" || "$cfg" == "full" ]]; then
+  EFFECTIVE_KG_RUN_MODES="vote"
+  if [[ "$RETRIEVAL_BACKEND" != "kg_typed_contrastive" && "$RETRIEVAL_BACKEND" != "hybrid_flat_kg" ]]; then
+    EFFECTIVE_RETRIEVAL_BACKEND="kg_typed_contrastive"
+  fi
+fi
 
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p artifacts/logs "$OUT_DIR"
@@ -68,6 +114,14 @@ fi
 python --version
 echo "Gold file: $GOLD"
 echo "KG run modes: $KG_RUN_MODES"
+echo "Effective KG run modes: $EFFECTIVE_KG_RUN_MODES"
+echo "Ablation config: $cfg"
+echo "Retrieval backend: $RETRIEVAL_BACKEND"
+echo "Effective retrieval backend: $EFFECTIVE_RETRIEVAL_BACKEND"
+echo "Model: $MODEL"
+echo "Infer device_map: $INFER_DEVICE"
+echo "DType: $DTYPE"
+echo "Batch size: $BATCH_SIZE"
 nvidia-smi
 
 export HF_HOME="${SCRATCH:-/tmp}/hf"
@@ -77,6 +131,8 @@ export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_NO_TF=1
 
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" artifacts/logs "$OUT_DIR"
+
+MODEL_SLUG="$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')"
 
 ensure_gen_detail() {
   if [[ -f "$GEN_DETAIL" ]]; then
@@ -105,67 +161,71 @@ ensure_kg() {
 }
 
 run_benchmark() {
-  local no_vote_prompts="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_novote.jsonl"
-  local vote_prompts="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_vote.jsonl"
-  local no_vote_preds="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_novote.jsonl"
-  local vote_preds="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_vote.jsonl"
-  local no_vote_report="$OUT_DIR/report_eval_${PROMPT_VERSION}_novote.json"
-  local vote_report="$OUT_DIR/report_eval_${PROMPT_VERSION}_vote.json"
+  local no_vote_prompts="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}_novote.jsonl"
+  local vote_prompts="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}_vote.jsonl"
+  local no_vote_preds="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}_novote.jsonl"
+  local vote_preds="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}_vote.jsonl"
+  local no_vote_report="$OUT_DIR/report_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}_novote.json"
+  local vote_report="$OUT_DIR/report_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}_vote.json"
 
-  if mode_enabled "novote" "$KG_RUN_MODES"; then
+  if mode_enabled "novote" "$EFFECTIVE_KG_RUN_MODES"; then
     python -m lkb.scripts.build_prompts \
       --gold "$GOLD" \
       --prompt kg \
       --version "$PROMPT_VERSION" \
       --no-include_vote_table \
-      --retrieval_backend "$RETRIEVAL_BACKEND" \
+      "${ABLATION_FLAGS[@]}" \
+      --retrieval_backend "$EFFECTIVE_RETRIEVAL_BACKEND" \
       --gen_detail "$GEN_DETAIL" \
       --kg_nodes "$KG_NODES" \
       --kg_edges "$KG_EDGES" \
       --out "$no_vote_prompts"
   fi
 
-  if mode_enabled "vote" "$KG_RUN_MODES"; then
+  if mode_enabled "vote" "$EFFECTIVE_KG_RUN_MODES"; then
     python -m lkb.scripts.build_prompts \
       --gold "$GOLD" \
       --prompt kg \
       --version "$PROMPT_VERSION" \
       --include_vote_table \
-      --retrieval_backend "$RETRIEVAL_BACKEND" \
+      "${ABLATION_FLAGS[@]}" \
+      --retrieval_backend "$EFFECTIVE_RETRIEVAL_BACKEND" \
       --gen_detail "$GEN_DETAIL" \
       --kg_nodes "$KG_NODES" \
       --kg_edges "$KG_EDGES" \
       --out "$vote_prompts"
   fi
 
-  if mode_enabled "novote" "$KG_RUN_MODES"; then
+  if mode_enabled "novote" "$EFFECTIVE_KG_RUN_MODES"; then
     python -m lkb.scripts.infer \
       --in "$no_vote_prompts" \
       --out "$no_vote_preds" \
       --model "$MODEL" \
       --device "$INFER_DEVICE" \
+      --dtype "$DTYPE" \
       --batch_size "$BATCH_SIZE" \
       --max_new_tokens "$MAX_NEW_TOKENS"
   fi
 
-  if mode_enabled "vote" "$KG_RUN_MODES"; then
+  if mode_enabled "vote" "$EFFECTIVE_KG_RUN_MODES"; then
     python -m lkb.scripts.infer \
       --in "$vote_prompts" \
       --out "$vote_preds" \
       --model "$MODEL" \
       --device "$INFER_DEVICE" \
+      --dtype "$DTYPE" \
       --batch_size "$BATCH_SIZE" \
       --max_new_tokens "$MAX_NEW_TOKENS"
   fi
 
-  if mode_enabled "novote" "$KG_RUN_MODES"; then
+  if mode_enabled "novote" "$EFFECTIVE_KG_RUN_MODES"; then
     python -m lkb.scripts.evaluate \
       --gold "$GOLD" \
       --pred "$no_vote_preds" \
       --report_out "$no_vote_report"
   fi
 
-  if mode_enabled "vote" "$KG_RUN_MODES"; then
+  if mode_enabled "vote" "$EFFECTIVE_KG_RUN_MODES"; then
     python -m lkb.scripts.evaluate \
       --gold "$GOLD" \
       --pred "$vote_preds" \
@@ -179,17 +239,19 @@ run_full() {
     --prompt kg \
     --version "$PROMPT_VERSION" \
     --include_vote_table \
-    --retrieval_backend "$RETRIEVAL_BACKEND" \
+    "${ABLATION_FLAGS[@]}" \
+    --retrieval_backend "$EFFECTIVE_RETRIEVAL_BACKEND" \
     --gen_detail "$GEN_DETAIL" \
     --kg_nodes "$KG_NODES" \
     --kg_edges "$KG_EDGES" \
-    --out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl"
+    --out "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.jsonl"
 
   python -m lkb.scripts.infer \
-    --in "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}.jsonl" \
-    --out "$OUT_DIR/eval_missing_predictions_all_${PROMPT_VERSION}.jsonl" \
+    --in "$OUT_DIR/eval_missing_prompts_all_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.jsonl" \
+    --out "$OUT_DIR/eval_missing_predictions_all_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.jsonl" \
     --model "$MODEL" \
     --device "$INFER_DEVICE" \
+    --dtype "$DTYPE" \
     --batch_size "$BATCH_SIZE" \
     --max_new_tokens "$MAX_NEW_TOKENS"
 }
