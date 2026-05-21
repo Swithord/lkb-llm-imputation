@@ -7,14 +7,11 @@
 #   sbatch --account=<acct> --gpus=a100:1 --mem=80G scripts/run_eval.sbatch
 #SBATCH --job-name=llm-impute-benchmark
 #SBATCH --account=rrg-annielee
-#SBATCH --time=06:00:00
+#SBATCH --time=16:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=h100:2
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=100G
-#SBATCH --output=artifacts/logs/%x-%j.out
-#SBATCH --error=artifacts/logs/%x-%j.err
-#SBATCH --mem=32G
 #SBATCH --array=0-4
 #SBATCH --output=artifacts/logs/%x-%A_%a.out
 #SBATCH --error=artifacts/logs/%x-%A_%a.err
@@ -32,7 +29,7 @@ PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
 EXTRA_MODULES="${EXTRA_MODULES:-}"
 VENV_PATH="${VENV_PATH:-.venv}"
-INFER_DEVICE="${INFER_DEVICE:-cuda}"
+INFER_DEVICE="${INFER_DEVICE:-auto}"
 DTYPE="${DTYPE:-bfloat16}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-64}"
@@ -76,18 +73,20 @@ python -c "import torch; print('torch ok')"
 
 #nvidia-smi
 
-#export HF_HOME="${SCRATCH:-/tmp}/hf"
+export HF_HOME="${SCRATCH:-/tmp}/hf"
 export TRANSFORMERS_CACHE="${SCRATCH:-/tmp}/hf/transformers"
 export HF_DATASETS_CACHE="${SCRATCH:-/tmp}/hf/datasets"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_NO_TF=1
 export HF_HUB_DISABLE_XET=1
-export HF_HOME=~/scratch/.cache/huggingface
+# export HF_HOME=~/scratch/.cache/huggingface
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE"
 
-PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${cfg}.jsonl"
-PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_${cfg}.jsonl"
-REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_${cfg}.json"
+MODEL_SLUG="$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')"
+
+PROMPTS="$OUT_DIR/prompts_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.jsonl"
+PREDS="$OUT_DIR/predictions_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.jsonl"
+REPORT="$OUT_DIR/report_eval_${PROMPT_VERSION}_${MODEL_SLUG}_${cfg}.json"
 
 # shellcheck disable=SC2046
 python -m lkb.scripts.build_prompts \
@@ -110,15 +109,3 @@ python -m lkb.scripts.evaluate \
   --gold "$GOLD" \
   --pred "$PREDS" \
   --report_out "$REPORT"
-
-# Speed benchmark only for the full config
-if [[ "$cfg" == "full" ]]; then
-  python -m lkb.scripts.speed_bench \
-    --in "$PROMPTS" \
-    --model "$MODEL" \
-    --device "$INFER_DEVICE" \
-    --dtype "$DTYPE" \
-    --batch_size "$BATCH_SIZE" \
-    --max_new_tokens "$MAX_NEW_TOKENS" \
-    --report_out "$OUT_DIR/speed_report_${PROMPT_VERSION}.json"
-fi
