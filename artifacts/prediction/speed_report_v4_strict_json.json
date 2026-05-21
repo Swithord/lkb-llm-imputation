@@ -3,6 +3,6 @@
   "n_prompts": 1200,
   "batch_size": 4,
   "max_new_tokens": 64,
-  "elapsed_s": 771.848,
-  "throughput_prompts_per_s": 1.5547
+  "elapsed_s": 1271.372,
+  "throughput_prompts_per_s": 0.9439
 }
