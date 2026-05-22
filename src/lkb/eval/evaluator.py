@@ -21,6 +21,17 @@ def _normalize_group(value: object) -> str:
     return aliases.get(raw, raw or "unknown")
 
 
+_FEATURE_TYPE_PREFIXES = ("S_", "P_", "INV_", "M_")
+
+
+def _feature_type(feature: object) -> str:
+    name = str(feature or "")
+    for prefix in _FEATURE_TYPE_PREFIXES:
+        if name.startswith(prefix):
+            return prefix.rstrip("_")
+    return "other"
+
+
 @dataclass(frozen=True)
 class GoldItem:
     id: str
@@ -89,12 +100,15 @@ class Evaluator:
             raise ValueError("gold and predictions must have identical lengths.")
 
         groups: Dict[str, Dict[str, int]] = {"overall": _new_group_stats()}
+        feature_groups: Dict[str, Dict[str, int]] = {}
         corr_for_cal: List[int] = []
         prob_for_cal: List[float] = []
 
         for g, pred in zip(gold, predictions):
             group = _normalize_group(g.resource_group)
+            ftype = _feature_type(g.feature)
             groups.setdefault(group, _new_group_stats())
+            feature_groups.setdefault(ftype, _new_group_stats())
 
             pval = pred.value
             pconf = (pred.confidence or "").strip().lower()
@@ -104,8 +118,7 @@ class Evaluator:
             correct = parsed and pval == g.gold_value
             rationale_ok = bool(prat and len(prat.split()) <= 30)
 
-            for key in ("overall", group):
-                stats = groups[key]
+            for stats in (groups["overall"], groups[group], feature_groups[ftype]):
                 stats["n"] += 1
                 stats["parsed"] += int(parsed)
                 stats["correct"] += int(correct)
@@ -114,8 +127,7 @@ class Evaluator:
             if parsed and g.gold_value in {"0", "1"} and pval in {"0", "1"}:
                 yi = int(g.gold_value)
                 pi = int(pval)
-                for key in ("overall", group):
-                    stats = groups[key]
+                for stats in (groups["overall"], groups[group], feature_groups[ftype]):
                     if yi == 1 and pi == 1:
                         stats["tp"] += 1
                     elif yi == 0 and pi == 1:
@@ -130,8 +142,7 @@ class Evaluator:
                 corr_for_cal.append(int(correct))
                 prob_for_cal.append(float(p_correct))
                 if pconf == "high":
-                    for key in ("overall", group):
-                        stats = groups[key]
+                    for stats in (groups["overall"], groups[group], feature_groups[ftype]):
                         stats["high_conf_n"] += 1
                         stats["high_conf_correct"] += int(correct)
 
@@ -149,7 +160,9 @@ class Evaluator:
         report = {
             "confidence_map": dict(self.calibration.mapping),
             "counts": {k: {"n": v["n"]} for k, v in groups.items()},
+            "counts_by_feature_type": {k: {"n": v["n"]} for k, v in feature_groups.items()},
             "metrics": {},
+            "metrics_by_feature_type": {},
             "calibration": {
                 "brier_on_correctness": brier,
                 "ece_10bin": ece,
@@ -157,20 +170,26 @@ class Evaluator:
             },
         }
         for k, v in groups.items():
-            precision = _safe_div(v["tp"], v["tp"] + v["fp"])
-            recall = _safe_div(v["tp"], v["tp"] + v["fn"])
-            f1 = _safe_div(2.0 * precision * recall, precision + recall)
-            report["metrics"][k] = {
-                "accuracy": _safe_div(v["correct"], v["n"]),
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
-                "parsed_rate": _safe_div(v["parsed"], v["n"]),
-                "high_conf_accuracy": _safe_div(v["high_conf_correct"], v["high_conf_n"]),
-                "high_conf_coverage": _safe_div(v["high_conf_n"], v["n"]),
-                "rationale_ok_rate": _safe_div(v["rationale_ok"], v["n"]),
-            }
+            report["metrics"][k] = _metrics_from_stats(v)
+        for k, v in feature_groups.items():
+            report["metrics_by_feature_type"][k] = _metrics_from_stats(v)
         return report
+
+
+def _metrics_from_stats(v: Mapping[str, int]) -> Dict[str, float]:
+    precision = _safe_div(v["tp"], v["tp"] + v["fp"])
+    recall = _safe_div(v["tp"], v["tp"] + v["fn"])
+    f1 = _safe_div(2.0 * precision * recall, precision + recall)
+    return {
+        "accuracy": _safe_div(v["correct"], v["n"]),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "parsed_rate": _safe_div(v["parsed"], v["n"]),
+        "high_conf_accuracy": _safe_div(v["high_conf_correct"], v["high_conf_n"]),
+        "high_conf_coverage": _safe_div(v["high_conf_n"], v["n"]),
+        "rationale_ok_rate": _safe_div(v["rationale_ok"], v["n"]),
+    }
 
 
 def _new_group_stats() -> Dict[str, int]:
