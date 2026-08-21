@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/scripts/build_kg.py", line 73, in <module>
+    main()
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/scripts/build_kg.py", line 40, in main
+    typ_df = pd.read_csv(args.typ, index_col=0)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 873, in read_csv
+    return _read(filepath_or_buffer, kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 300, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 1645, in __init__
+    self._engine = self._make_engine(f, self.engine)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 1904, in _make_engine
+    self.handles = get_handle(
+                   ^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/pandas/io/common.py", line 926, in get_handle
+    handle = open(
+             ^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/derived/uriel+_typological.csv'

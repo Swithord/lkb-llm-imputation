@@ -18,6 +18,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 CONFIGS=(base anchors phylo geo full)
 cfg="${CONFIGS[$SLURM_ARRAY_TASK_ID]}"
 
@@ -28,7 +31,7 @@ PROMPT_VERSION="${PROMPT_VERSION:-v4_strict_json}"
 PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
 EXTRA_MODULES="${EXTRA_MODULES:-}"
-VENV_PATH="${VENV_PATH:-.venv}"
+VENV_PATH="${VENV_PATH:-$REPO_ROOT/.venv}"
 INFER_DEVICE="${INFER_DEVICE:-auto}"
 DTYPE="${DTYPE:-bfloat16}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
@@ -49,8 +52,8 @@ config_flags() {
   esac
 }
 
-cd "$SLURM_SUBMIT_DIR"
-export PYTHONPATH="$SLURM_SUBMIT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+cd "$REPO_ROOT"
+export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 mkdir -p artifacts/logs "$OUT_DIR"
 
 if [[ -n "$PYTHON_MODULE" ]]; then module load "$PYTHON_MODULE"; fi

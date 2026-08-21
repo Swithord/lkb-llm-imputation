@@ -1,0 +1,38 @@
+You are using a model of type `gemma4` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+Traceback (most recent call last):
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/transformers/models/auto/configuration_auto.py", line 1493, in from_pretrained
+    config_class = CONFIG_MAPPING[config_dict["model_type"]]
+                   ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/transformers/models/auto/configuration_auto.py", line 1196, in __getitem__
+    raise KeyError(key)
+KeyError: 'gemma4'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/scripts/infer.py", line 114, in <module>
+    main()
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/scripts/infer.py", line 90, in main
+    raws = llm.complete(payloads)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/impute/llm.py", line 101, in complete
+    return [self._generate(p.system, p.user) for p in payloads]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/impute/llm.py", line 101, in <listcomp>
+    return [self._generate(p.system, p.user) for p in payloads]
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/impute/llm.py", line 64, in _generate
+    self._ensure_loaded()
+  File "/project/6102153/vivianqw/lkb-llm-imputation/src/lkb/impute/llm.py", line 61, in _ensure_loaded
+    self._model = AutoModelForCausalLM.from_pretrained(self.model_name, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/transformers/models/auto/auto_factory.py", line 326, in from_pretrained
+    config, kwargs = AutoConfig.from_pretrained(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6102153/vivianqw/lkb-llm-imputation/.venv/lib/python3.11/site-packages/transformers/models/auto/configuration_auto.py", line 1495, in from_pretrained
+    raise ValueError(
+ValueError: The checkpoint you are trying to load has model type `gemma4` but Transformers does not recognize this architecture. This could be because of an issue with the checkpoint, or because your version of Transformers is out of date.
+
+You can update Transformers with the command `pip install --upgrade transformers`. If this does not work, and the checkpoint is very new, then there may not be a release version that supports this model yet. In this case, you can get the most up-to-date code by installing Transformers from source with the command `pip install git+https://github.com/huggingface/transformers.git`

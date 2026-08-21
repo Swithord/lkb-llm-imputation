@@ -1,0 +1,9 @@
+PWD: /project/6102153/vivianqw/lkb-llm-imputation
+HOST: g19.nibi.sharcnet
+which python: /project/6102153/vivianqw/lkb-llm-imputation/.venv/bin/python
+Python 3.11.4
+Ablation config: base (task 0)
+Gold file: data/benchmark/gold_eval_2.jsonl
+pandas ok
+torch ok
+Wrote 1200 prompts -> artifacts/prediction/prompts_eval_v4_strict_json_gemma-4-31b-it_base.jsonl

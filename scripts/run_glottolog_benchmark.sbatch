@@ -18,12 +18,15 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 MODE="${MODE:-benchmark}"   # benchmark | full | all
 MODEL="${MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
 GOLD="${GOLD:-data/benchmark/gold_eval_2.jsonl}"
 PROMPT_VERSION="${PROMPT_VERSION:-v5_glottolog_tree_json}"
 KG_RUN_MODES="${KG_RUN_MODES:-vote}"   # comma-separated: vote,novote
-GLOTTOLOG_PATH="${GLOTTOLOG_PATH:-$SLURM_SUBMIT_DIR/glottolog}"
+GLOTTOLOG_PATH="${GLOTTOLOG_PATH:-$REPO_ROOT/glottolog}"
 GEN_DETAIL="${GEN_DETAIL:-data/derived/genetic_neighbours_detailed.json}"
 KG_NODES="${KG_NODES:-artifacts/resources/kg_nodes.jsonl}"
 KG_EDGES="${KG_EDGES:-artifacts/resources/kg_edges.jsonl}"
@@ -32,7 +35,7 @@ OUT_DIR="${OUT_DIR:-artifacts/prediction/stratified_v1/${RETRIEVAL_BACKEND}}"
 PYTHON_MODULE="${PYTHON_MODULE:-python}"
 CUDA_MODULE="${CUDA_MODULE:-cuda}"
 EXTRA_MODULES="${EXTRA_MODULES:-}"
-VENV_PATH="${VENV_PATH:-.venv}"
+VENV_PATH="${VENV_PATH:-$REPO_ROOT/.venv}"
 INFER_DEVICE="${INFER_DEVICE:-auto}"
 DTYPE="${DTYPE:-bfloat16}"
 BATCH_SIZE="${BATCH_SIZE:-}"
@@ -92,8 +95,11 @@ if [[ "$cfg" == "phylo" || "$cfg" == "geo" || "$cfg" == "full" ]]; then
   fi
 fi
 
-cd "$SLURM_SUBMIT_DIR"
+cd "$REPO_ROOT"
 mkdir -p artifacts/logs "$OUT_DIR"
+
+# Ensure repo `src/` is on PYTHONPATH so `python -m lkb...` works
+export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ -n "$PYTHON_MODULE" ]]; then
   module load "$PYTHON_MODULE"
